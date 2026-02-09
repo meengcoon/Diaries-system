@@ -19,6 +19,7 @@ venv/
 *.db-shm
 *.db-wal
 *.sqlite3
+*.sql
 *.log
 
 # Personal diary content / plaintext artifacts
