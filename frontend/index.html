@@ -1,0 +1,119 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Diary System</title>
+  <link rel="stylesheet" href="style.css">
+  <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+</head>
+<body>
+  <div class="app-shell">
+    <header class="topbar">
+      <div>
+        <h1>Diary System</h1>
+        <p class="tagline">本地保存、即时对话、可观测处理结果</p>
+      </div>
+      <div class="system-pill" id="system-pill">系统检查中...</div>
+    </header>
+
+    <main class="workspace">
+      <section class="panel diary-panel">
+        <div class="panel-head">
+          <h2>今日记录</h2>
+          <div class="shortcut">快捷键: Ctrl/Cmd + Enter</div>
+        </div>
+
+        <div class="diary-layout">
+          <aside class="history-pane">
+            <div class="history-head">
+              <span>历史日记</span>
+              <button id="refresh-history-btn" class="ghost-btn" type="button">刷新</button>
+            </div>
+            <div class="history-list" id="history-list">
+              <div class="history-empty">暂无历史记录</div>
+            </div>
+          </aside>
+
+          <div class="editor-pane">
+            <label class="field-label" for="diary-input">内容</label>
+            <textarea
+              id="diary-input"
+              rows="15"
+              placeholder="写下今天的经历、情绪、想法，或需要 AI 帮你梳理的问题"
+            ></textarea>
+
+            <div class="action-row">
+              <button id="save-btn" class="primary-btn">保存日记</button>
+              <button id="analyze-latest-btn" class="ghost-btn" type="button">同步最新日记</button>
+              <span id="status" class="status-text"></span>
+            </div>
+
+            <div class="result-box" id="save-result-box">
+              <div class="result-title">保存结果</div>
+              <div class="metric-grid">
+                <div class="metric-item">
+                  <span class="metric-name">Entry ID</span>
+                  <span class="metric-value" id="metric-entry-id">-</span>
+                </div>
+                <div class="metric-item">
+                  <span class="metric-name">Queued Blocks</span>
+                  <span class="metric-value" id="metric-blocks">-</span>
+                </div>
+                <div class="metric-item">
+                  <span class="metric-name">Memory Updated</span>
+                  <span class="metric-value" id="metric-memory-updated">-</span>
+                </div>
+                <div class="metric-item">
+                  <span class="metric-name">Analysis OK</span>
+                  <span class="metric-value" id="metric-analysis-ok">-</span>
+                </div>
+              </div>
+              <div class="meta-line" id="save-file-path">文件: -</div>
+            </div>
+
+            <div class="result-box" id="analyze-result-box">
+              <div class="result-title">分析状态</div>
+              <div class="metric-grid">
+                <div class="metric-item"><span class="metric-name">Pending</span><span class="metric-value" id="an-pending">0</span></div>
+                <div class="metric-item"><span class="metric-name">Running</span><span class="metric-value" id="an-running">0</span></div>
+                <div class="metric-item"><span class="metric-name">Done</span><span class="metric-value" id="an-done">0</span></div>
+                <div class="metric-item"><span class="metric-name">Failed</span><span class="metric-value" id="an-failed">0</span></div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="panel chat-panel">
+        <div class="panel-head">
+          <h2>对话助手</h2>
+          <div class="chat-tools">
+            <label class="debug-toggle">
+              <input type="checkbox" id="debug-toggle" />
+              <span>Debug</span>
+            </label>
+            <button id="clear-chat-btn" class="ghost-btn" type="button">清空会话</button>
+          </div>
+        </div>
+
+        <div id="chat-messages" class="chat-messages">
+          <div class="chat-empty">开始提问吧，回答会结合本地日记上下文。</div>
+        </div>
+
+        <details class="debug-panel" id="debug-panel">
+          <summary>最近一次 Debug 数据</summary>
+          <pre id="debug-output">暂无</pre>
+        </details>
+
+        <div class="chat-input-row">
+          <input id="chat-input" type="text" placeholder="输入问题，回车发送" autocomplete="off" />
+          <button id="chat-send-btn" class="primary-btn" type="button">发送</button>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>

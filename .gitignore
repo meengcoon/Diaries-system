@@ -1,0 +1,47 @@
+# Python cache / build
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.pytest_cache/
+
+# Virtual environments
+.venv/
+.ven/
+venv/
+
+# Secrets and local config
+.env
+.env.*
+
+# Local databases / logs
+*.db
+*.db-shm
+*.db-wal
+*.sqlite3
+*.log
+
+# Personal diary content / plaintext artifacts
+diaries/
+*.txt
+
+# Data exports / model artifacts
+training_data/
+artifacts/
+*.jsonl
+*.zip
+
+# Packaged app / build outputs
+dist/
+build/
+
+# Local state / generated binaries
+*.app
+*.spec
+
+# OS / IDE
+.DS_Store
+.idea/
+
+# Nested/local repos
+Diaries-System/

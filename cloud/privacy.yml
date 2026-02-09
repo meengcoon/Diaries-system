@@ -1,0 +1,24 @@
+rules:
+  - id: no-payload-print
+    message: "Do not print or log full payload content in cloud runners."
+    severity: ERROR
+    languages: [python]
+    patterns:
+      - pattern-either:
+          - pattern: print($PAYLOAD)
+          - pattern: logger.info($PAYLOAD)
+          - pattern: logger.debug($PAYLOAD)
+    metadata:
+      category: privacy
+
+  - id: no-write-request-payload
+    message: "Do not write request payload to disk in cloud runner."
+    severity: ERROR
+    languages: [python]
+    patterns:
+      - pattern-either:
+          - pattern: open($PATH, "w")
+          - pattern: open($PATH, "a")
+          - pattern: Path($PATH).write_text(...)
+    metadata:
+      category: privacy
