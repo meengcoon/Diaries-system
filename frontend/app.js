@@ -1,32 +1,39 @@
 const el = {
-  diaryInput: document.getElementById("diary-input"),
-  saveBtn: document.getElementById("save-btn"),
-  analyzeLatestBtn: document.getElementById("analyze-latest-btn"),
+  systemPill: document.getElementById("system-pill"),
   status: document.getElementById("status"),
-  historyList: document.getElementById("history-list"),
-  refreshHistoryBtn: document.getElementById("refresh-history-btn"),
+  menuItems: Array.from(document.querySelectorAll(".menu-item")),
+  viewChat: document.getElementById("view-chat"),
+  viewNotebook: document.getElementById("view-notebook"),
+  viewInsights: document.getElementById("view-insights"),
+
   chatMessages: document.getElementById("chat-messages"),
-  chatInput: document.getElementById("chat-input"),
-  chatSendBtn: document.getElementById("chat-send-btn"),
+  unifiedInput: document.getElementById("unified-input"),
+  sendBtn: document.getElementById("send-btn"),
   clearChatBtn: document.getElementById("clear-chat-btn"),
   debugToggle: document.getElementById("debug-toggle"),
-  debugOutput: document.getElementById("debug-output"),
   debugPanel: document.getElementById("debug-panel"),
-  systemPill: document.getElementById("system-pill"),
-  metricEntryId: document.getElementById("metric-entry-id"),
-  metricBlocks: document.getElementById("metric-blocks"),
-  metricMemoryUpdated: document.getElementById("metric-memory-updated"),
-  metricAnalysisOk: document.getElementById("metric-analysis-ok"),
-  saveFilePath: document.getElementById("save-file-path"),
-  anPending: document.getElementById("an-pending"),
-  anRunning: document.getElementById("an-running"),
-  anDone: document.getElementById("an-done"),
-  anFailed: document.getElementById("an-failed"),
+  debugOutput: document.getElementById("debug-output"),
+
+  historyList: document.getElementById("history-list"),
+  refreshHistoryBtn: document.getElementById("refresh-history-btn"),
+  readerDate: document.getElementById("reader-date"),
+  readerContent: document.getElementById("reader-content"),
+
+  refreshInsightsBtn: document.getElementById("refresh-insights-btn"),
+  sDiaries: document.getElementById("s-diaries"),
+  sEntries: document.getElementById("s-entries"),
+  sAnalysis: document.getElementById("s-analysis"),
+  sPending: document.getElementById("s-pending"),
+  signalsLine: document.getElementById("signals-line"),
+  traitList: document.getElementById("trait-list"),
+  strengthList: document.getElementById("strength-list"),
+  weaknessList: document.getElementById("weakness-list"),
+  topicList: document.getElementById("topic-list"),
 };
 
 const state = {
   selectedDate: null,
-  analyzePollTimer: null,
+  currentView: "chat",
 };
 
 function setStatus(text) {
@@ -59,72 +66,45 @@ async function fetchJson(url, options = {}) {
 
 function clearChatEmpty() {
   const emptyNode = el.chatMessages?.querySelector(".chat-empty");
-  if (emptyNode) {
-    emptyNode.remove();
-  }
+  if (emptyNode) emptyNode.remove();
 }
 
-function appendChat(role, text) {
-  if (!el.chatMessages) return;
+function escapeHtml(str) {
+  return String(str || "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/\"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
 
+function appendUserMessage(text, kind) {
+  if (!el.chatMessages) return;
   clearChatEmpty();
 
   const node = document.createElement("div");
-  node.className = `chat-msg ${role === "user" ? "user" : "ai"}`;
-
-  if (role === "ai") {
-    try {
-      node.innerHTML = marked.parse(text || "");
-    } catch (_err) {
-      node.textContent = text;
-    }
-  } else {
-    node.textContent = text;
-  }
+  node.className = "chat-msg user";
+  const tag = kind === "diary" ? "日记" : "聊天";
+  node.innerHTML = `<div class="msg-kind">${tag}</div><div>${escapeHtml(text)}</div>`;
 
   el.chatMessages.appendChild(node);
   el.chatMessages.scrollTop = el.chatMessages.scrollHeight;
 }
 
-function updateSaveMetrics(data = {}) {
-  el.metricEntryId.textContent = data.entry_id || "-";
-  el.metricBlocks.textContent = String(data.queued_blocks ?? "-");
-  el.metricMemoryUpdated.textContent = String(data.memory_updated ?? "-");
-  el.metricAnalysisOk.textContent = String(data.analysis_ok ?? "-");
-  el.saveFilePath.textContent = `文件: ${data.file || "-"}`;
-}
+function appendAiMessage(text) {
+  if (!el.chatMessages) return;
+  clearChatEmpty();
 
-function updateAnalyzeStats(stats = {}) {
-  el.anPending.textContent = String(stats.pending ?? 0);
-  el.anRunning.textContent = String(stats.running ?? 0);
-  el.anDone.textContent = String(stats.done ?? 0);
-  el.anFailed.textContent = String(stats.failed ?? 0);
-}
-
-async function refreshAnalyzeStatus() {
+  const node = document.createElement("div");
+  node.className = "chat-msg ai";
   try {
-    const data = await fetchJson("/api/diary/analyze_status");
-    updateAnalyzeStats(data.stats || {});
-    return data.stats || {};
+    node.innerHTML = marked.parse(text || "");
   } catch (_err) {
-    return null;
+    node.textContent = text || "";
   }
-}
 
-function startAnalyzePolling() {
-  if (state.analyzePollTimer) {
-    clearInterval(state.analyzePollTimer);
-    state.analyzePollTimer = null;
-  }
-  state.analyzePollTimer = setInterval(async () => {
-    const stats = await refreshAnalyzeStatus();
-    if (!stats) return;
-    if ((stats.pending || 0) === 0 && (stats.running || 0) === 0) {
-      clearInterval(state.analyzePollTimer);
-      state.analyzePollTimer = null;
-      setStatus(`分析完成：done=${stats.done || 0}, failed=${stats.failed || 0}`);
-    }
-  }, 2000);
+  el.chatMessages.appendChild(node);
+  el.chatMessages.scrollTop = el.chatMessages.scrollHeight;
 }
 
 function updateDebugPanel(debugData) {
@@ -134,6 +114,33 @@ function updateDebugPanel(debugData) {
     return;
   }
   el.debugOutput.textContent = JSON.stringify(debugData, null, 2);
+}
+
+function switchView(view) {
+  state.currentView = view;
+
+  el.menuItems.forEach((btn) => {
+    const active = btn.getAttribute("data-view") === view;
+    btn.classList.toggle("active", active);
+  });
+
+  el.viewChat?.classList.toggle("hidden", view !== "chat");
+  el.viewNotebook?.classList.toggle("hidden", view !== "notebook");
+  el.viewInsights?.classList.toggle("hidden", view !== "insights");
+}
+
+function detectInputKind(text) {
+  const value = String(text || "").trim();
+  const hasQuestion = /[?？]|(为什么|怎么|如何|吗|呢|what|how|why|can|could|should)/i.test(value);
+  const diaryHint = /(今天|昨天|刚刚|刚才|记录|日记|心情|反思|经历|早上|中午|晚上|凌晨|我觉得|我在|我想想|总结)/.test(value);
+  const lineCount = value.split(/\n+/).filter(Boolean).length;
+  const looksLong = value.length >= 80;
+  const firstPerson = /(我|\bI\b)/.test(value);
+
+  if (hasQuestion && !looksLong && lineCount <= 2 && !diaryHint) return "chat";
+  if (looksLong || lineCount >= 2 || diaryHint) return "diary";
+  if (!hasQuestion && firstPerson) return "diary";
+  return "chat";
 }
 
 async function refreshSystemPill() {
@@ -170,7 +177,7 @@ function renderHistory(items = []) {
     return `
       <button class="history-item ${active}" data-date="${item.date}" type="button">
         <div class="history-date">${item.date}</div>
-        <div class="history-preview">${preview}</div>
+        <div class="history-preview">${escapeHtml(preview)}</div>
         <div class="history-meta">${sizeKB} KB</div>
       </button>
     `;
@@ -181,18 +188,19 @@ function renderHistory(items = []) {
 
 async function loadHistory() {
   try {
-    const data = await fetchJson("/api/diary/list?limit=90");
+    const data = await fetchJson("/api/diary/list?limit=120");
     renderHistory(data.items || []);
   } catch (err) {
-    el.historyList.innerHTML = `<div class="history-empty">加载失败: ${err.message}</div>`;
+    el.historyList.innerHTML = `<div class="history-empty">加载失败: ${escapeHtml(err.message)}</div>`;
   }
 }
 
 async function openDiary(date) {
   try {
     const data = await fetchJson(`/api/diary/read?date=${encodeURIComponent(date)}`);
-    el.diaryInput.value = data.text || "";
     state.selectedDate = date;
+    if (el.readerDate) el.readerDate.textContent = `日记 ${date}`;
+    if (el.readerContent) el.readerContent.textContent = data.text || "";
     setStatus(`已加载 ${date}`);
     await loadHistory();
   } catch (err) {
@@ -200,90 +208,104 @@ async function openDiary(date) {
   }
 }
 
-async function saveDiary() {
-  const text = el.diaryInput?.value?.trim() || "";
-  if (!text) {
-    setStatus("内容为空，未保存。");
+function setList(container, items) {
+  if (!container) return;
+  if (!items || items.length === 0) {
+    container.innerHTML = "<li>暂无</li>";
     return;
   }
+  container.innerHTML = items.map((x) => `<li>${escapeHtml(String(x))}</li>`).join("");
+}
 
-  el.saveBtn.disabled = true;
-  setStatus("正在保存...");
-
+async function refreshInsights() {
   try {
-    const data = await fetchJson("/api/diary/save", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ text }),
-    });
+    const data = await fetchJson("/api/dashboard/overview?limit=120");
+    const stats = data.stats || {};
+    const jobs = stats.jobs || {};
 
-    updateSaveMetrics(data);
-    state.selectedDate = data.file?.match(/(\d{4}-\d{2}-\d{2})\.txt$/)?.[1] || null;
-    await loadHistory();
-    await refreshAnalyzeStatus();
-    setStatus(`保存成功，已入队 ${data.queued_blocks ?? 0} 个分块`);
+    if (el.sDiaries) el.sDiaries.textContent = String(stats.diaries_count ?? "-");
+    if (el.sEntries) el.sEntries.textContent = String(stats.entries_count ?? "-");
+    if (el.sAnalysis) el.sAnalysis.textContent = String(stats.analysis_samples ?? "-");
+    if (el.sPending) el.sPending.textContent = String((jobs.pending || 0) + (jobs.running || 0));
+
+    const sig = data.signals_avg || {};
+    const sigText = [
+      `mood ${sig.mood ?? "-"}`,
+      `stress ${sig.stress ?? "-"}`,
+      `sleep ${sig.sleep ?? "-"}`,
+      `exercise ${sig.exercise ?? "-"}`,
+      `social ${sig.social ?? "-"}`,
+      `work ${sig.work ?? "-"}`,
+    ].join(" | ");
+    if (el.signalsLine) el.signalsLine.textContent = sigText;
+
+    const persona = data.persona || {};
+    setList(el.traitList, persona.traits || []);
+    setList(el.strengthList, persona.strengths || []);
+    setList(el.weaknessList, persona.weaknesses || []);
+
+    const topics = (data.topics || []).map((x) => `${x.topic} (${x.count})`);
+    if (el.topicList) {
+      el.topicList.textContent = topics.length ? topics.join(" · ") : "暂无";
+    }
   } catch (err) {
-    setStatus(`保存失败: ${err.message}`);
-  } finally {
-    el.saveBtn.disabled = false;
+    setStatus(`画像刷新失败: ${err.message}`);
   }
 }
 
-async function analyzeLatest() {
-  el.analyzeLatestBtn.disabled = true;
-  setStatus("已提交同步任务，正在分析最新未完成日记...");
-  try {
-    await fetchJson("/api/diary/analyze_latest", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        entry_limit: 60,
-        job_limit: 300,
-        preferred_provider: "deepseek",
-        min_block_chars: 20,
-        max_attempts: 12,
-        job_timeout_s: 180,
-      }),
-    });
-    await refreshAnalyzeStatus();
-    startAnalyzePolling();
-  } catch (err) {
-    setStatus(`同步任务提交失败: ${err.message}`);
-  } finally {
-    el.analyzeLatestBtn.disabled = false;
+async function saveDiaryFromChat(text) {
+  const data = await fetchJson("/api/diary/save", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ text }),
+  });
+
+  await Promise.all([loadHistory(), refreshInsights()]);
+
+  appendAiMessage(
+    `已识别为日记并保存。\n\n- Entry ID: ${data.entry_id || "-"}\n- Queued Blocks: ${data.queued_blocks ?? "-"}\n- Memory Updated: ${data.memory_updated ?? "-"}`
+  );
+}
+
+async function replyChat(text, debugEnabled) {
+  const data = await fetchJson("/api/chat", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ text, mode: "chat", debug: debugEnabled }),
+  });
+
+  appendAiMessage(data.reply || "未记录");
+  updateDebugPanel(data.debug);
+  if (debugEnabled && el.debugPanel) {
+    el.debugPanel.open = true;
   }
 }
 
-async function sendChat() {
-  const text = el.chatInput?.value?.trim() || "";
+async function sendUnifiedInput() {
+  const text = el.unifiedInput?.value?.trim() || "";
   if (!text) return;
 
   const debugEnabled = Boolean(el.debugToggle?.checked);
+  const kind = detectInputKind(text);
 
-  appendChat("user", text);
-  el.chatInput.value = "";
-  setStatus("AI 正在回复...");
-  el.chatSendBtn.disabled = true;
+  appendUserMessage(text, kind);
+  el.unifiedInput.value = "";
+  setStatus(`已识别为${kind === "diary" ? "日记" : "聊天"}，处理中...`);
+  if (el.sendBtn) el.sendBtn.disabled = true;
 
   try {
-    const data = await fetchJson("/api/chat", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ text, mode: "chat", debug: debugEnabled }),
-    });
-
-    appendChat("ai", data.reply || "未记录");
-    updateDebugPanel(data.debug);
-    if (debugEnabled && el.debugPanel) {
-      el.debugPanel.open = true;
+    if (kind === "diary") {
+      await saveDiaryFromChat(text);
+    } else {
+      await replyChat(text, debugEnabled);
     }
     setStatus("");
   } catch (err) {
-    appendChat("ai", `请求失败: ${err.message}`);
-    setStatus("聊天请求失败");
+    appendAiMessage(`请求失败: ${err.message}`);
+    setStatus("处理失败");
   } finally {
-    el.chatSendBtn.disabled = false;
-    el.chatInput?.focus();
+    if (el.sendBtn) el.sendBtn.disabled = false;
+    el.unifiedInput?.focus();
   }
 }
 
@@ -292,29 +314,34 @@ function clearChat() {
   el.chatMessages.innerHTML = "";
   const empty = document.createElement("div");
   empty.className = "chat-empty";
-  empty.textContent = "会话已清空，开始新的提问。";
+  empty.textContent = "会话已清空，继续输入即可。";
   el.chatMessages.appendChild(empty);
   updateDebugPanel(null);
 }
 
 function bindEvents() {
-  el.saveBtn?.addEventListener("click", saveDiary);
-  el.analyzeLatestBtn?.addEventListener("click", analyzeLatest);
-  el.chatSendBtn?.addEventListener("click", sendChat);
-  el.clearChatBtn?.addEventListener("click", clearChat);
-  el.refreshHistoryBtn?.addEventListener("click", loadHistory);
-
-  el.diaryInput?.addEventListener("keydown", (e) => {
-    if ((e.metaKey || e.ctrlKey) && e.key === "Enter") {
-      e.preventDefault();
-      saveDiary();
-    }
+  el.menuItems.forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const view = btn.getAttribute("data-view") || "chat";
+      switchView(view);
+      if (view === "notebook") {
+        loadHistory();
+      }
+      if (view === "insights") {
+        refreshInsights();
+      }
+    });
   });
 
-  el.chatInput?.addEventListener("keydown", (e) => {
+  el.sendBtn?.addEventListener("click", sendUnifiedInput);
+  el.clearChatBtn?.addEventListener("click", clearChat);
+  el.refreshHistoryBtn?.addEventListener("click", loadHistory);
+  el.refreshInsightsBtn?.addEventListener("click", refreshInsights);
+
+  el.unifiedInput?.addEventListener("keydown", (e) => {
     if (e.key === "Enter" && !e.shiftKey) {
       e.preventDefault();
-      sendChat();
+      sendUnifiedInput();
     }
   });
 
@@ -329,10 +356,12 @@ function bindEvents() {
 }
 
 function ensureDomReady() {
-  const missing = Object.entries(el)
-    .filter(([, node]) => !node)
-    .map(([name]) => name);
+  const required = [
+    "systemPill", "chatMessages", "unifiedInput", "sendBtn", "historyList", "readerContent", "readerDate",
+    "sDiaries", "sEntries", "sAnalysis", "sPending", "signalsLine", "traitList", "strengthList", "weaknessList", "topicList"
+  ];
 
+  const missing = required.filter((name) => !el[name]);
   if (missing.length > 0) {
     throw new Error(`Missing DOM nodes: ${missing.join(", ")}`);
   }
@@ -341,7 +370,8 @@ function ensureDomReady() {
 async function bootstrap() {
   ensureDomReady();
   bindEvents();
-  await Promise.all([refreshSystemPill(), loadHistory(), refreshAnalyzeStatus()]);
+  switchView("chat");
+  await Promise.all([refreshSystemPill(), loadHistory(), refreshInsights()]);
 }
 
 bootstrap();

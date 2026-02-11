@@ -12,82 +12,21 @@
     <header class="topbar">
       <div>
         <h1>Diary System</h1>
-        <p class="tagline">本地保存、即时对话、可观测处理结果</p>
+        <p class="tagline">一个窗口里写日记、聊天与查看画像</p>
       </div>
       <div class="system-pill" id="system-pill">系统检查中...</div>
     </header>
 
-    <main class="workspace">
-      <section class="panel diary-panel">
+    <nav class="top-menu" aria-label="主菜单">
+      <button class="menu-item active" data-view="chat" type="button">对话</button>
+      <button class="menu-item" data-view="notebook" type="button">日记本</button>
+      <button class="menu-item" data-view="insights" type="button">数据画像</button>
+    </nav>
+
+    <main class="workspace-single">
+      <section class="panel view-panel" id="view-chat">
         <div class="panel-head">
-          <h2>今日记录</h2>
-          <div class="shortcut">快捷键: Ctrl/Cmd + Enter</div>
-        </div>
-
-        <div class="diary-layout">
-          <aside class="history-pane">
-            <div class="history-head">
-              <span>历史日记</span>
-              <button id="refresh-history-btn" class="ghost-btn" type="button">刷新</button>
-            </div>
-            <div class="history-list" id="history-list">
-              <div class="history-empty">暂无历史记录</div>
-            </div>
-          </aside>
-
-          <div class="editor-pane">
-            <label class="field-label" for="diary-input">内容</label>
-            <textarea
-              id="diary-input"
-              rows="15"
-              placeholder="写下今天的经历、情绪、想法，或需要 AI 帮你梳理的问题"
-            ></textarea>
-
-            <div class="action-row">
-              <button id="save-btn" class="primary-btn">保存日记</button>
-              <button id="analyze-latest-btn" class="ghost-btn" type="button">同步最新日记</button>
-              <span id="status" class="status-text"></span>
-            </div>
-
-            <div class="result-box" id="save-result-box">
-              <div class="result-title">保存结果</div>
-              <div class="metric-grid">
-                <div class="metric-item">
-                  <span class="metric-name">Entry ID</span>
-                  <span class="metric-value" id="metric-entry-id">-</span>
-                </div>
-                <div class="metric-item">
-                  <span class="metric-name">Queued Blocks</span>
-                  <span class="metric-value" id="metric-blocks">-</span>
-                </div>
-                <div class="metric-item">
-                  <span class="metric-name">Memory Updated</span>
-                  <span class="metric-value" id="metric-memory-updated">-</span>
-                </div>
-                <div class="metric-item">
-                  <span class="metric-name">Analysis OK</span>
-                  <span class="metric-value" id="metric-analysis-ok">-</span>
-                </div>
-              </div>
-              <div class="meta-line" id="save-file-path">文件: -</div>
-            </div>
-
-            <div class="result-box" id="analyze-result-box">
-              <div class="result-title">分析状态</div>
-              <div class="metric-grid">
-                <div class="metric-item"><span class="metric-name">Pending</span><span class="metric-value" id="an-pending">0</span></div>
-                <div class="metric-item"><span class="metric-name">Running</span><span class="metric-value" id="an-running">0</span></div>
-                <div class="metric-item"><span class="metric-name">Done</span><span class="metric-value" id="an-done">0</span></div>
-                <div class="metric-item"><span class="metric-name">Failed</span><span class="metric-value" id="an-failed">0</span></div>
-              </div>
-            </div>
-          </div>
-        </div>
-      </section>
-
-      <section class="panel chat-panel">
-        <div class="panel-head">
-          <h2>对话助手</h2>
+          <h2>对话窗口</h2>
           <div class="chat-tools">
             <label class="debug-toggle">
               <input type="checkbox" id="debug-toggle" />
@@ -98,7 +37,7 @@
         </div>
 
         <div id="chat-messages" class="chat-messages">
-          <div class="chat-empty">开始提问吧，回答会结合本地日记上下文。</div>
+          <div class="chat-empty">直接输入内容。系统会自动判断你是在写日记还是在聊天。</div>
         </div>
 
         <details class="debug-panel" id="debug-panel">
@@ -106,9 +45,80 @@
           <pre id="debug-output">暂无</pre>
         </details>
 
-        <div class="chat-input-row">
-          <input id="chat-input" type="text" placeholder="输入问题，回车发送" autocomplete="off" />
-          <button id="chat-send-btn" class="primary-btn" type="button">发送</button>
+        <div class="composer-wrap">
+          <textarea
+            id="unified-input"
+            rows="3"
+            placeholder="输入你想说的话。回车发送，Shift+回车换行。"
+          ></textarea>
+          <div class="composer-actions">
+            <button id="send-btn" class="primary-btn" type="button">发送</button>
+            <span id="status" class="status-text"></span>
+          </div>
+        </div>
+      </section>
+
+      <section class="panel view-panel hidden" id="view-notebook">
+        <div class="panel-head">
+          <h2>日记本</h2>
+          <button id="refresh-history-btn" class="ghost-btn" type="button">刷新</button>
+        </div>
+
+        <div class="notebook-layout">
+          <aside class="history-pane">
+            <div class="history-head">
+              <span>历史记录</span>
+            </div>
+            <div class="history-list" id="history-list">
+              <div class="history-empty">暂无历史记录</div>
+            </div>
+          </aside>
+
+          <section class="reader-pane">
+            <h3 id="reader-date">请选择一条日记</h3>
+            <pre id="reader-content" class="reader-content">读取后会在这里展示内容。</pre>
+          </section>
+        </div>
+      </section>
+
+      <section class="panel view-panel hidden" id="view-insights">
+        <div class="panel-head">
+          <h2>数据画像</h2>
+          <button id="refresh-insights-btn" class="ghost-btn" type="button">刷新画像</button>
+        </div>
+
+        <div class="metric-grid summary-grid">
+          <div class="metric-item"><span class="metric-name">日记文件数</span><span class="metric-value" id="s-diaries">-</span></div>
+          <div class="metric-item"><span class="metric-name">结构化条目数</span><span class="metric-value" id="s-entries">-</span></div>
+          <div class="metric-item"><span class="metric-name">分析样本数</span><span class="metric-value" id="s-analysis">-</span></div>
+          <div class="metric-item"><span class="metric-name">队列中任务</span><span class="metric-value" id="s-pending">-</span></div>
+        </div>
+
+        <div class="result-box">
+          <div class="result-title">平均信号（0-10）</div>
+          <div class="signals" id="signals-line">-</div>
+        </div>
+
+        <div class="insight-columns">
+          <div class="result-box">
+            <div class="result-title">人格特点</div>
+            <ul id="trait-list" class="insight-list"><li>暂无</li></ul>
+          </div>
+
+          <div class="result-box">
+            <div class="result-title">优点</div>
+            <ul id="strength-list" class="insight-list"><li>暂无</li></ul>
+          </div>
+
+          <div class="result-box">
+            <div class="result-title">可改进点</div>
+            <ul id="weakness-list" class="insight-list"><li>暂无</li></ul>
+          </div>
+        </div>
+
+        <div class="result-box">
+          <div class="result-title">近期高频主题</div>
+          <div id="topic-list" class="topic-list">暂无</div>
         </div>
       </section>
     </main>
