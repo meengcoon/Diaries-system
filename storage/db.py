@@ -50,6 +50,11 @@ from .repo_entries import (  # noqa: F401
     list_recent_entry_summaries,
     get_entry_analysis_brief,
 )
+from .repo_audio import (  # noqa: F401
+    insert_audio_entry,
+    list_recent_audio_entries,
+    list_recent_audio_analyses,
+)
 
 # Memory
 from .repo_mem import (  # noqa: F401
@@ -123,6 +128,10 @@ __all__ = [
     "list_recent_entries",
     "list_recent_entry_summaries",
     "get_entry_analysis_brief",
+    # audio
+    "insert_audio_entry",
+    "list_recent_audio_entries",
+    "list_recent_audio_analyses",
     # mem
     "get_mem_card",
     "list_mem_cards",

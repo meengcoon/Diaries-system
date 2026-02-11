@@ -4,21 +4,26 @@ import os
 import subprocess
 import sys
 import logging
+import json
+import uuid
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
 
-from fastapi import APIRouter, BackgroundTasks, HTTPException, Query, Request
+from fastapi import APIRouter, BackgroundTasks, File, Form, HTTPException, Query, Request, UploadFile
 from pydantic import BaseModel
 
 from cloud.sync_client import cloud_sync_enabled, sync_diary_file_to_cloud, sync_diary_file_to_cloud_bg
 from storage.db_core import connect
+from storage.db import insert_audio_entry, list_recent_audio_analyses, list_recent_audio_entries
+from pipeline.audio_features import analyze_audio_file, build_voice_profile
 from utils.timeutil import utc_now_iso, local_today_str
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
+MAX_AUDIO_UPLOAD_BYTES = int(os.getenv("DIARY_MAX_AUDIO_UPLOAD_MB", "25")) * 1024 * 1024
 
 
 # DiaryEntry 仅用于 legacy bot.entries 的增量追加；如果 diary_bot 未导出该类型，使用同字段的本地 dataclass 兜底。
@@ -67,6 +72,34 @@ def _safe_diary_path(diaries_dir: Path, date_str: str) -> Path:
     return diaries_dir / f"{date_str}.txt"
 
 
+def _audio_dir(request: Request, date_str: str) -> Path:
+    diaries_dir = _diaries_dir(request)
+    _safe_diary_path(diaries_dir, date_str)  # validate date
+    audio_path = diaries_dir / "audio" / date_str
+    audio_path.mkdir(parents=True, exist_ok=True)
+    return audio_path
+
+
+def _safe_audio_ext(filename: str, content_type: str) -> str:
+    suffix = (Path(filename or "").suffix or "").lower()
+    allow = {".webm", ".wav", ".m4a", ".mp3", ".ogg", ".opus", ".aac"}
+    if suffix in allow:
+        return suffix
+
+    ct = (content_type or "").lower()
+    if "webm" in ct:
+        return ".webm"
+    if "wav" in ct:
+        return ".wav"
+    if "mpeg" in ct or "mp3" in ct:
+        return ".mp3"
+    if "ogg" in ct:
+        return ".ogg"
+    if "mp4" in ct or "m4a" in ct:
+        return ".m4a"
+    return ".webm"
+
+
 @router.get("/api/diary/list")
 async def list_diaries(request: Request, limit: int = Query(default=30, ge=1, le=365)):
     diaries_dir = _diaries_dir(request)
@@ -104,6 +137,86 @@ async def read_diary(request: Request, date: str = Query(...)):
 
     text = file_path.read_text(encoding="utf-8", errors="ignore")
     return {"ok": True, "date": date, "file": str(file_path), "text": text}
+
+
+@router.post("/api/diary/audio/save")
+async def save_audio_diary(
+    request: Request,
+    audio: UploadFile = File(...),
+    date: Optional[str] = Form(default=None),
+    note: Optional[str] = Form(default=None),
+):
+    date_str = date or local_today_str()
+    audio_folder = _audio_dir(request, date_str)
+
+    ext = _safe_audio_ext(audio.filename or "", audio.content_type or "")
+    stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+    target_path = audio_folder / f"{stamp}_{uuid.uuid4().hex[:10]}{ext}"
+
+    total = 0
+    with open(target_path, "wb") as f:
+        while True:
+            chunk = await audio.read(1024 * 1024)
+            if not chunk:
+                break
+            total += len(chunk)
+            if total > MAX_AUDIO_UPLOAD_BYTES:
+                f.close()
+                target_path.unlink(missing_ok=True)
+                raise HTTPException(
+                    status_code=413,
+                    detail={
+                        "code": "AUDIO_TOO_LARGE",
+                        "message": f"audio file too large (> {MAX_AUDIO_UPLOAD_BYTES // (1024 * 1024)}MB)",
+                    },
+                )
+            f.write(chunk)
+    await audio.close()
+
+    if total <= 0:
+        target_path.unlink(missing_ok=True)
+        raise HTTPException(status_code=400, detail={"code": "EMPTY_AUDIO", "message": "empty audio upload"})
+
+    analysis = analyze_audio_file(target_path)
+    audio_entry_id = insert_audio_entry(
+        diary_date=date_str,
+        file_path=str(target_path),
+        source_format=str(analysis.get("source_ext") or ext),
+        duration_s=float(analysis.get("duration_s")) if isinstance(analysis.get("duration_s"), (int, float)) else None,
+        file_size_bytes=total,
+        note=(note or "").strip()[:500],
+        analysis_json=json.dumps(analysis, ensure_ascii=False),
+        created_at=utc_now_iso(),
+    )
+
+    profile = build_voice_profile(list_recent_audio_analyses(limit=30))
+    analysis_error = str(analysis.get("error") or "").strip()
+    analysis_ok = (analysis_error == "")
+    return {
+        "ok": bool(analysis_ok),
+        "uploaded": True,
+        "analysis_ok": bool(analysis_ok),
+        "analysis_error": (analysis_error or None),
+        "audio_entry_id": int(audio_entry_id),
+        "date": date_str,
+        "file": str(target_path),
+        "size_bytes": total,
+        "analysis": analysis,
+        "voice_profile": profile,
+    }
+
+
+@router.get("/api/diary/audio/list")
+async def list_audio_diaries(limit: int = Query(default=30, ge=1, le=365)):
+    items = list_recent_audio_entries(limit=limit)
+    return {"ok": True, "count": len(items), "items": items}
+
+
+@router.get("/api/diary/audio/profile")
+async def get_audio_profile(limit: int = Query(default=30, ge=3, le=365)):
+    analyses = list_recent_audio_analyses(limit=limit)
+    profile = build_voice_profile(analyses)
+    return {"ok": True, "sampled": len(analyses), "profile": profile}
 
 
 @router.post("/api/diary/cloud/sync_existing")
@@ -250,15 +363,9 @@ async def save_diary(req: SaveDiaryRequest, request: Request, background_tasks: 
     """保存日记：写 txt 备份 + 增量写 SQLite（不再在保存时运行 Phi/Qwen）"""
     logger.info(f"保存日记: 长度={len(req.text)}")
 
-    # 1) 写 txt 备份（保持你现有行为）
+    # 1) 先做 ingest，避免输入非法时先写入 txt 造成文件/数据库状态分裂
     date_str = req.date or local_today_str()
     file_path = _safe_diary_path(_diaries_dir(request), date_str)
-
-    ts = utc_now_iso()
-    new_text = (req.text or "").strip()
-    chunk = f"\n\n--- {ts} ---\n{new_text}\n"
-    with open(file_path, "a", encoding="utf-8") as f:
-        f.write(chunk)
 
     # 2) 走 ingest：insert_entry -> split_to_blocks -> entry_blocks -> block_jobs（不跑模型）
     ingest_entry = getattr(request.app.state, "ingest_entry", None)
@@ -273,6 +380,13 @@ async def save_diary(req: SaveDiaryRequest, request: Request, background_tasks: 
         msg = str(e)
         status = 413 if "too long" in msg.lower() else 400
         raise HTTPException(status_code=status, detail={"code": "INVALID_INPUT", "message": msg})
+
+    # 3) ingest 成功后再写 txt 备份
+    ts = utc_now_iso()
+    new_text = (req.text or "").strip()
+    chunk = f"\n\n--- {ts} ---\n{new_text}\n"
+    with open(file_path, "a", encoding="utf-8") as f:
+        f.write(chunk)
 
     entry_id = ingest_res.get("entry_id")
 

@@ -345,6 +345,13 @@ textarea:focus {
   transform: translateY(-1px);
 }
 
+#record-btn.recording {
+  color: #ffffff;
+  background: linear-gradient(180deg, #ff6a6a 0%, #eb4040 100%);
+  border-color: rgba(246, 69, 69, 0.82);
+  box-shadow: 0 10px 22px rgba(214, 48, 48, 0.32);
+}
+
 .status-text {
   font-size: 13px;
   color: var(--text-soft);

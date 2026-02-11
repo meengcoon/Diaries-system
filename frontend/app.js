@@ -8,6 +8,7 @@ const el = {
 
   chatMessages: document.getElementById("chat-messages"),
   unifiedInput: document.getElementById("unified-input"),
+  recordBtn: document.getElementById("record-btn"),
   sendBtn: document.getElementById("send-btn"),
   clearChatBtn: document.getElementById("clear-chat-btn"),
   debugToggle: document.getElementById("debug-toggle"),
@@ -34,6 +35,10 @@ const el = {
 const state = {
   selectedDate: null,
   currentView: "chat",
+  recorder: null,
+  recordStream: null,
+  recordChunks: [],
+  isRecording: false,
 };
 
 function setStatus(text) {
@@ -105,6 +110,156 @@ function appendAiMessage(text) {
 
   el.chatMessages.appendChild(node);
   el.chatMessages.scrollTop = el.chatMessages.scrollHeight;
+}
+
+function formatNum(v, digits = 2) {
+  const n = Number(v);
+  if (!Number.isFinite(n)) return "-";
+  return n.toFixed(digits);
+}
+
+function canRecordAudio() {
+  return Boolean(
+    navigator?.mediaDevices?.getUserMedia &&
+    typeof window.MediaRecorder !== "undefined"
+  );
+}
+
+function preferredRecordMimeType() {
+  const candidates = ["audio/webm;codecs=opus", "audio/webm", "audio/mp4"];
+  for (const c of candidates) {
+    if (window.MediaRecorder?.isTypeSupported?.(c)) return c;
+  }
+  return "";
+}
+
+function updateRecordBtn() {
+  if (!el.recordBtn) return;
+  el.recordBtn.classList.toggle("recording", state.isRecording);
+  el.recordBtn.textContent = state.isRecording ? "停止录音" : "开始录音";
+}
+
+function cleanupRecordStream() {
+  if (state.recordStream) {
+    state.recordStream.getTracks().forEach((t) => t.stop());
+  }
+  state.recordStream = null;
+}
+
+async function uploadVoiceBlob(blob) {
+  const fd = new FormData();
+  fd.append("audio", blob, `voice-${Date.now()}.webm`);
+
+  const note = (el.unifiedInput?.value || "").trim();
+  if (note) {
+    fd.append("note", note);
+  }
+
+  const data = await fetchJson("/api/diary/audio/save", {
+    method: "POST",
+    body: fd,
+  });
+
+  const a = data.analysis || {};
+  const p = data.voice_profile || {};
+  const habits = Array.isArray(p.habits) ? p.habits : [];
+  const analysisOk = data.analysis_ok !== false && !a.error;
+  appendUserMessage(note || "[语音日记]", "diary");
+  if (!analysisOk) {
+    appendAiMessage(
+      [
+        "语音已保存，但特征分析失败。",
+        "",
+        `- Audio Entry ID: ${data.audio_entry_id ?? "-"}`,
+        `- 失败原因: ${data.analysis_error || a.error || "unknown"}`,
+      ].join("\n")
+    );
+    return;
+  }
+
+  appendAiMessage(
+    [
+      "已保存语音日记并完成特征分析。",
+      "",
+      `- Audio Entry ID: ${data.audio_entry_id ?? "-"}`,
+      `- 时长: ${formatNum(a.duration_s, 2)}s`,
+      `- 发声占比: ${formatNum((Number(a.voiced_ratio || 0) * 100), 1)}%`,
+      `- 停顿占比: ${formatNum((Number(a.pause_ratio || 0) * 100), 1)}%`,
+      `- 停顿频率: ${formatNum(a.pauses_per_min, 1)} 次/分钟`,
+      `- 语速代理: ${formatNum(a.syllable_rate_proxy, 2)} 单位/s`,
+      "",
+      habits.length ? "语音习惯画像：" : "语音习惯画像：样本不足",
+      ...habits.map((h) => `- ${h}`),
+    ].join("\n")
+  );
+}
+
+async function startRecording() {
+  if (!canRecordAudio()) {
+    throw new Error("当前浏览器不支持录音（需要 MediaRecorder）");
+  }
+
+  const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+  state.recordStream = stream;
+  state.recordChunks = [];
+
+  const mimeType = preferredRecordMimeType();
+  const recorder = mimeType
+    ? new MediaRecorder(stream, { mimeType })
+    : new MediaRecorder(stream);
+  state.recorder = recorder;
+
+  recorder.addEventListener("dataavailable", (e) => {
+    if (e.data && e.data.size > 0) {
+      state.recordChunks.push(e.data);
+    }
+  });
+
+  recorder.addEventListener("stop", async () => {
+    const chunkType = state.recordChunks[0]?.type || "audio/webm";
+    const blob = new Blob(state.recordChunks, { type: chunkType });
+    state.recordChunks = [];
+    cleanupRecordStream();
+
+    if (blob.size <= 0) {
+      setStatus("录音为空，未上传");
+      return;
+    }
+
+    try {
+      setStatus("语音上传与分析中...");
+      if (el.recordBtn) el.recordBtn.disabled = true;
+      await uploadVoiceBlob(blob);
+      await Promise.all([loadHistory(), refreshInsights()]);
+      setStatus("语音日记已保存");
+    } catch (err) {
+      appendAiMessage(`语音上传失败: ${err.message}`);
+      setStatus("语音上传失败");
+    } finally {
+      if (el.recordBtn) el.recordBtn.disabled = false;
+    }
+  });
+
+  recorder.start(300);
+  state.isRecording = true;
+  updateRecordBtn();
+  setStatus("录音中，点击“停止录音”结束");
+}
+
+function stopRecording() {
+  if (!state.recorder || state.recorder.state !== "recording") return;
+  state.recorder.stop();
+  state.recorder = null;
+  state.isRecording = false;
+  updateRecordBtn();
+}
+
+async function toggleRecording() {
+  if (!state.isRecording) {
+    await startRecording();
+    return;
+  }
+  stopRecording();
 }
 
 function updateDebugPanel(debugData) {
@@ -334,6 +489,16 @@ function bindEvents() {
   });
 
   el.sendBtn?.addEventListener("click", sendUnifiedInput);
+  el.recordBtn?.addEventListener("click", async () => {
+    try {
+      await toggleRecording();
+    } catch (err) {
+      setStatus(`录音失败: ${err.message}`);
+      cleanupRecordStream();
+      state.isRecording = false;
+      updateRecordBtn();
+    }
+  });
   el.clearChatBtn?.addEventListener("click", clearChat);
   el.refreshHistoryBtn?.addEventListener("click", loadHistory);
   el.refreshInsightsBtn?.addEventListener("click", refreshInsights);
@@ -369,6 +534,11 @@ function ensureDomReady() {
 
 async function bootstrap() {
   ensureDomReady();
+  if (el.recordBtn && !canRecordAudio()) {
+    el.recordBtn.disabled = true;
+    el.recordBtn.title = "当前浏览器不支持录音";
+  }
+  updateRecordBtn();
   bindEvents();
   switchView("chat");
   await Promise.all([refreshSystemPill(), loadHistory(), refreshInsights()]);

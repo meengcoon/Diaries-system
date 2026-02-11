@@ -460,6 +460,27 @@ def init_db() -> None:
         conn.execute("CREATE INDEX IF NOT EXISTS idx_cloud_sync_state_updated_at ON cloud_sync_state(updated_at);")
         conn.execute("CREATE INDEX IF NOT EXISTS idx_cloud_sync_state_status ON cloud_sync_state(last_status);")
 
+        # =====================
+        # Voice diary: raw audio + feature analysis
+        # =====================
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS audio_entries (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                created_at TEXT NOT NULL,
+                diary_date TEXT NOT NULL,
+                file_path TEXT NOT NULL UNIQUE,
+                source_format TEXT NOT NULL,
+                duration_s REAL,
+                file_size_bytes INTEGER NOT NULL,
+                note TEXT,
+                analysis_json TEXT NOT NULL
+            );
+            """
+        )
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_audio_entries_created_at ON audio_entries(created_at);")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_audio_entries_diary_date ON audio_entries(diary_date);")
+
         conn.commit()
 
     except Exception:
