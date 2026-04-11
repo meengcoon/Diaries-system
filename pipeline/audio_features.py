@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import math
-import shutil
 import subprocess
 import tempfile
 import wave
@@ -9,6 +8,8 @@ from pathlib import Path
 from typing import Any, Dict, List
 
 import numpy as np
+
+from utils.ffmpeg import find_ffmpeg
 
 
 def _to_float32_pcm(raw: bytes, sample_width: int) -> np.ndarray:
@@ -39,7 +40,7 @@ def _read_wav_mono(path: Path) -> tuple[np.ndarray, int]:
 
 
 def _ffmpeg_to_wav(src: Path) -> Path:
-    ffmpeg = shutil.which("ffmpeg")
+    ffmpeg = find_ffmpeg()
     if not ffmpeg:
         raise RuntimeError("ffmpeg not found")
 

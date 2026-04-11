@@ -6,11 +6,15 @@ import sys
 from pathlib import Path
 from typing import Optional
 
+from dotenv import load_dotenv
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
-# Bot selection (M4): prefer CascadeBot; fall back to legacy DiaryPersonaBot
+_DEFAULT_ENV_PATH = Path(__file__).resolve().parent / ".env"
+load_dotenv(dotenv_path=_DEFAULT_ENV_PATH, override=False)
+
+# Bot selection: only CascadeBot is supported now.
 cascade_import_err: Optional[str] = None
 try:
     from bot.cascade_bot import CascadeBot  # type: ignore
@@ -18,23 +22,21 @@ except Exception as e:
     CascadeBot = None  # type: ignore
     cascade_import_err = f"{type(e).__name__}: {e}"
 
-from diary_bot import DiaryPersonaBot
-
 from storage.db import init_db  # type: ignore
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-def _resolve_base_dir() -> Path:
-    """Resolve resource base directory.
+def _resolve_resource_dir() -> Path:
+    """Resolve bundled resource directory.
 
     Priority:
-      1) DIARY_BASE_DIR env override
+      1) DIARY_RESOURCE_DIR env override
       2) PyInstaller frozen bundle: <App>.app/Contents/Resources
       3) PyInstaller _MEIPASS fallback
       4) Dev mode: directory containing this file
     """
-    env = (os.getenv("DIARY_BASE_DIR") or "").strip()
+    env = (os.getenv("DIARY_RESOURCE_DIR") or "").strip()
     if env:
         return Path(env).expanduser().resolve()
 
@@ -64,26 +66,38 @@ def _resolve_base_dir() -> Path:
     return Path(__file__).resolve().parent
 
 
-BASE_DIR = _resolve_base_dir()
+def _resolve_data_dir(resource_dir: Path) -> Path:
+    """Resolve writable user data directory."""
+    env = (os.getenv("DIARY_DATA_DIR") or os.getenv("DIARY_BASE_DIR") or "").strip()
+    if env:
+        path = Path(env).expanduser().resolve()
+        path.mkdir(parents=True, exist_ok=True)
+        return path
+
+    if getattr(sys, "frozen", False):
+        home = Path.home()
+        path = home / "Library" / "Application Support" / "DiarySystem"
+        path.mkdir(parents=True, exist_ok=True)
+        return path
+
+    return resource_dir
+
+
+RESOURCE_DIR = _resolve_resource_dir()
+DATA_DIR = _resolve_data_dir(RESOURCE_DIR)
 
 
 def _select_bot() -> object:
     if CascadeBot is not None:
         return CascadeBot()  # type: ignore
-    return DiaryPersonaBot(
-        diaries_dir=str(BASE_DIR / "diaries"),
-        num_samples=5,
-        target_lang="zh",
-    )
+    return None
 
 
 bot = _select_bot()
 logger.info(f"server.py loaded from: {__file__}")
 logger.info(f"Bot selected: {bot.__class__.__name__}")
 if cascade_import_err:
-    logger.warning(
-        f"CascadeBot import failed; falling back to DiaryPersonaBot. err={cascade_import_err}"
-    )
+    logger.warning(f"CascadeBot import failed; chat will be unavailable. err={cascade_import_err}")
 
 
 app = FastAPI(title="Personal Diary AI & English Learning")
@@ -91,7 +105,9 @@ app = FastAPI(title="Personal Diary AI & English Learning")
 # Share globals with route modules via app.state
 app.state.bot = bot
 app.state.cascade_import_err = cascade_import_err
-app.state.base_dir = BASE_DIR
+app.state.base_dir = RESOURCE_DIR
+app.state.resource_dir = RESOURCE_DIR
+app.state.data_dir = DATA_DIR
 
 
 # Step 1: 保存时只做入库 + 切块 + 入队（不再在保存时运行 Phi/Qwen）
@@ -157,22 +173,20 @@ _configure_cors(app)
 
 # Routers
 from api.routes_chat import router as chat_router
-from api.routes_contract import router as contract_router
 from api.routes_diary import router as diary_router
 from api.routes_meta import router as meta_router
 
 app.include_router(meta_router)
 app.include_router(chat_router)
-app.include_router(contract_router)
 app.include_router(diary_router)
 
 
 # Static files (must be after API routers)
-frontend_dir = BASE_DIR / "frontend"
+frontend_dir = RESOURCE_DIR / "frontend"
 if frontend_dir.exists():
     app.mount("/", StaticFiles(directory=frontend_dir, html=True), name="frontend")
 else:
-    logger.error(f"frontend directory not found: {frontend_dir} (BASE_DIR={BASE_DIR})")
+    logger.error(f"frontend directory not found: {frontend_dir} (RESOURCE_DIR={RESOURCE_DIR})")
 
     @app.get("/", include_in_schema=False)
     async def _missing_frontend_root():

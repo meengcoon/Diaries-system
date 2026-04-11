@@ -1,4 +1,3 @@
-import os
 import re
 import time
 import asyncio
@@ -7,6 +6,7 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from typing import Any, Callable, Dict, List, Optional
 
+from core.settings import env_bool, env_float, env_int, env_str
 from llm.providers import ProviderError, ProviderResult, get_provider
 from llm.request_store import hash_request, store_meta, store_request, store_response
 from storage.repo_llm_cache import get_cached_response_json, is_cache_enabled, upsert_cached_response_json
@@ -23,38 +23,6 @@ _PII_PATTERNS = [
     re.compile(r"(?x)(?<!\w)(?:\+?\d{1,3}[\s-]?)?(?:\(?\d{2,4}\)?[\s-]?)?\d{3,4}[\s-]?\d{3,4}(?!\w)"),
 ]
 
-
-def _env_bool(name: str, default: bool) -> bool:
-    v = (os.getenv(name) or "").strip().lower()
-    if not v:
-        return default
-    if v in {"1", "true", "yes", "y", "on"}:
-        return True
-    if v in {"0", "false", "no", "n", "off"}:
-        return False
-    return default
-
-
-def _env_int(name: str, default: int) -> int:
-    v = (os.getenv(name) or "").strip()
-    if not v:
-        return default
-    try:
-        return int(v)
-    except Exception:
-        return default
-
-
-def _env_float(name: str, default: float) -> float:
-    v = (os.getenv(name) or "").strip()
-    if not v:
-        return default
-    try:
-        return float(v)
-    except Exception:
-        return default
-
-
 def _norm_privacy_level(level: Any) -> str:
     v = str(level or "").strip().upper()
     if v in _PRIVACY_RANK:
@@ -69,7 +37,7 @@ def _infer_privacy_level(payload: Dict[str, Any]) -> str:
 
 
 def _privacy_allowed(payload: Dict[str, Any]) -> tuple[bool, str]:
-    max_level = _norm_privacy_level(os.getenv("CLOUD_MAX_PRIVACY_LEVEL", "L1"))
+    max_level = _norm_privacy_level(env_str("CLOUD_MAX_PRIVACY_LEVEL", "L1"))
     req_level = _norm_privacy_level(payload.get("privacy_level") or _infer_privacy_level(payload))
     if _PRIVACY_RANK[req_level] > _PRIVACY_RANK[max_level]:
         return False, f"privacy_blocked req={req_level} max={max_level}"
@@ -91,7 +59,7 @@ def _sanitize_cloud_messages(messages: List[Dict[str, Any]]) -> List[Dict[str, A
     return clean
 
 
-def _filter_cloud_payload(payload: Dict[str, Any], *, allow_style_profile: bool) -> Dict[str, Any]:
+def _filter_cloud_payload(payload: Dict[str, Any]) -> Dict[str, Any]:
     keep = {
         "intent",
         "prompt_version",
@@ -105,10 +73,7 @@ def _filter_cloud_payload(payload: Dict[str, Any], *, allow_style_profile: bool)
         "cloud_model",
         "local_model",
     }
-    out = {k: payload[k] for k in keep if k in payload}
-    if allow_style_profile and "style_profile" in payload:
-        out["style_profile"] = payload["style_profile"]
-    return out
+    return {k: payload[k] for k in keep if k in payload}
 
 
 def should_use_cloud(intent: str, *, force_cloud: bool = False) -> bool:
@@ -145,8 +110,8 @@ def _cloud_circuit_open(provider: str) -> bool:
 
     If failures >= threshold within window => circuit open => route to local.
     """
-    window_s = _env_int("CLOUD_FAIL_WINDOW_S", 600)
-    threshold = _env_int("CLOUD_FAIL_THRESHOLD", 3)
+    window_s = env_int("CLOUD_FAIL_WINDOW_S", 600)
+    threshold = env_int("CLOUD_FAIL_THRESHOLD", 3)
     if threshold <= 0:
         return False
 
@@ -179,7 +144,7 @@ def route(task: str, payload: Dict[str, Any]) -> RouteDecision:
       - CLOUD_ONLY_WHEN_IDLE (default 0)
       - CLOUD_CHAR_THRESHOLD (default 6000)
       - CLOUD_DEFAULT_PROVIDER (default "deepseek")
-      - DEEPSEEK_MODEL / QWEN_MODEL (defaults: "deepseek-chat" / "qwen-plus")
+      - DEEPSEEK_MODEL / QWEN_CLOUD_MODEL (defaults: "deepseek-chat" / "qwen-plus")
     """
 
     task = (task or "").strip().lower()
@@ -197,11 +162,11 @@ def route(task: str, payload: Dict[str, Any]) -> RouteDecision:
             fallback_backend="none",
         )
 
-    cloud_enabled = _env_bool("CLOUD_ENABLED", False)
-    allow_cloud_inference = _env_bool("ALLOW_CLOUD_INFERENCE", True)
-    allow_cloud_training = _env_bool("ALLOW_CLOUD_TRAINING", False)
-    block_raw_text_upload = _env_bool("BLOCK_RAW_TEXT_UPLOAD", True)
-    only_when_idle = _env_bool("CLOUD_ONLY_WHEN_IDLE", False)
+    cloud_enabled = env_bool("CLOUD_ENABLED", False)
+    allow_cloud_inference = env_bool("ALLOW_CLOUD_INFERENCE", True)
+    allow_cloud_training = env_bool("ALLOW_CLOUD_TRAINING", False)
+    block_raw_text_upload = env_bool("BLOCK_RAW_TEXT_UPLOAD", True)
+    only_when_idle = env_bool("CLOUD_ONLY_WHEN_IDLE", False)
     is_idle = bool(payload.get("is_idle", True))
     use_for_training = bool(payload.get("use_for_training", False))
 
@@ -285,7 +250,7 @@ def route(task: str, payload: Dict[str, Any]) -> RouteDecision:
         text = payload.get("text") or payload.get("raw_text") or payload.get("user_text") or ""
         char_len = len(str(text))
 
-    char_threshold = _env_int("CLOUD_CHAR_THRESHOLD", 6000)
+    char_threshold = env_int("CLOUD_CHAR_THRESHOLD", 6000)
 
     want_cloud = bool(payload.get("force_cloud")) or should_use_cloud(intent) or (char_len >= char_threshold)
 
@@ -299,7 +264,7 @@ def route(task: str, payload: Dict[str, Any]) -> RouteDecision:
             fallback_backend="none",
         )
 
-    provider = (payload.get("preferred_provider") or os.getenv("CLOUD_DEFAULT_PROVIDER") or "deepseek").strip().lower()
+    provider = (payload.get("preferred_provider") or env_str("CLOUD_DEFAULT_PROVIDER") or "deepseek").strip().lower()
     if provider not in {"deepseek", "qwen"}:
         provider = "deepseek"
 
@@ -317,12 +282,11 @@ def route(task: str, payload: Dict[str, Any]) -> RouteDecision:
     if provider == "qwen":
         model = str(
             payload.get("cloud_model")
-            or os.getenv("QWEN_CLOUD_MODEL")
-            or os.getenv("QWEN_MODEL")
+            or env_str("QWEN_CLOUD_MODEL")
             or "qwen-plus"
         )
     else:
-        model = str(payload.get("cloud_model") or os.getenv("DEEPSEEK_MODEL") or "deepseek-chat")
+        model = str(payload.get("cloud_model") or env_str("DEEPSEEK_MODEL") or "deepseek-chat")
 
     return RouteDecision(
         backend="cloud",
@@ -395,8 +359,7 @@ def generate(
     # Cloud redaction: only redact content when routing to cloud.
     # This ensures local processing remains untouched while cloud payloads are sanitized.
     if decision.backend == "cloud":
-        allow_style_profile = _env_bool("ALLOW_STYLE_PROFILE_UPLOAD", True)
-        payload = _filter_cloud_payload(payload, allow_style_profile=allow_style_profile)
+        payload = _filter_cloud_payload(payload)
         messages = _sanitize_cloud_messages(messages)
 
     # -------- Local path --------
@@ -463,10 +426,10 @@ def generate(
     provider_name = decision.provider
     provider = get_provider(provider_name)
 
-    timeout_connect_s = _env_float("CLOUD_TIMEOUT_CONNECT_S", 10.0)
-    timeout_read_s = _env_float("CLOUD_TIMEOUT_READ_S", 120.0)
-    retries = _env_int("CLOUD_RETRIES", 2)
-    ttl_s = _env_int("LLM_CACHE_TTL_S", 0)
+    timeout_connect_s = env_float("CLOUD_TIMEOUT_CONNECT_S", 10.0)
+    timeout_read_s = env_float("CLOUD_TIMEOUT_READ_S", 120.0)
+    retries = env_int("CLOUD_RETRIES", 2)
+    ttl_s = env_int("LLM_CACHE_TTL_S", 0)
     ttl_arg = ttl_s if ttl_s > 0 else None
 
     req_params = {

@@ -15,24 +15,23 @@ try:
 except Exception:  # pragma: no cover
     routed_generate = None  # type: ignore
 
-from core.settings import PHI_MODEL as DEFAULT_PHI_MODEL, PHI_NUM_PREDICT, QWEN_MODEL as DEFAULT_QWEN_MODEL
+from core.settings import ANSWER_MODEL as DEFAULT_ANSWER_MODEL, ANSWER_NUM_PREDICT, PHI_MODEL as DEFAULT_PHI_MODEL, PHI_NUM_PREDICT
 from llm.ollama_client import OllamaClient
 from llm.providers import ProviderError, ProviderResult
-from pipeline.context_pack import build_context_pack, build_context_pack_text
+from services.chat_context_service import build_self_profile_pack, fallback_self_profile_answer
+from services.retrieval_service import build_context_pack, build_context_pack_text
 
 ROUTE_PROMPT_VERSION = "phi_route_v1"
-ANSWER_PROMPT_VERSION = "qwen_grounded_answer_v1"
+ANSWER_PROMPT_VERSION = "grounded_answer_v1"
 
 # Per-model hard timeouts (seconds)
 PHI_TIMEOUT_S = float(os.getenv("PHI_TIMEOUT_S", "12"))
-QWEN_TIMEOUT_S = float(os.getenv("QWEN_TIMEOUT_S", "45"))
+ANSWER_TIMEOUT_S = float(os.getenv("ANSWER_TIMEOUT_S", os.getenv("QWEN_TIMEOUT_S", "45")))
 
 # Total request budget (seconds) to avoid hitting client-side curl max-time
 TOTAL_TIMEOUT_S = float(os.getenv("TOTAL_TIMEOUT_S", "70"))
 
 # Output limits (Ollama num_predict)
-QWEN_NUM_PREDICT = int(os.getenv("QWEN_NUM_PREDICT", "420"))
-
 logger = logging.getLogger(__name__)
 
 
@@ -123,9 +122,38 @@ def _is_fast_tag_query(q: str) -> bool:
     return (q or "") in {"sleep", "work", "exercise", "social", "stress"}
 
 
+def _looks_like_personal_diary_query(user_text: str) -> bool:
+    t = (user_text or "").strip().lower()
+    if not t:
+        return False
+    patterns = [
+        r"你觉得我.*(什么样|怎样).*(人|状态|类型)",
+        r"你有我哪些信息",
+        r"你知道我(什么|哪些)",
+        r"根据(我的)?日记",
+        r"我(是|像)什么样的人",
+        r"我.*(性格|特点|习惯|模式|变化|状态)".replace(" ", ""),
+        r"我最近.*(怎么样|怎样|状态|变化)",
+        r"我是不是",
+        r"我.*(总是|经常).*(吗|么|呢|？|\?)",
+    ]
+    return any(re.search(pat, t) for pat in patterns)
+
+
+def _personal_diary_query_hint(user_text: str) -> str:
+    t = (user_text or "").strip().lower()
+    if re.search(r"哪些信息|知道我(什么|哪些)", t):
+        return "个人信息 习惯 主题"
+    if re.search(r"什么样的人|性格|特点", t):
+        return "性格 特点 习惯"
+    if re.search(r"我是不是|总是|经常", t):
+        return _fallback_query(user_text) or "近期 变化 模式"
+    return _fallback_query(user_text) or "近期 记录 习惯"
+
+
 def _build_route_messages(user_text: str) -> List[Dict[str, str]]:
     schema = {
-        "intent": "diary_qa|general",
+        "intent": "diary_qa|self_profile|general",
         "query": "",
         "top_k": 5,
         "recent_n": 8,
@@ -137,7 +165,7 @@ def _build_route_messages(user_text: str) -> List[Dict[str, str]]:
         "You are a routing engine for a diary assistant.\n"
         "Return ONE valid JSON object ONLY. No markdown. No extra text.\n"
         "Keys MUST match schema exactly.\n"
-        "intent: 'diary_qa' for questions about user's diary/history; 'general' for general knowledge.\n"
+        "intent: 'diary_qa' for diary/history facts; 'self_profile' for summarizing the user from diary patterns; 'general' for general knowledge.\n"
         "query: short retrieval query (<= 6 words). Empty for general.\n"
         "top_k: 0-8, recent_n: 0-12, char_budget: 1200-6000\n"
         "lang: 'zh' if user message mainly Chinese else 'en'\n"
@@ -147,7 +175,7 @@ def _build_route_messages(user_text: str) -> List[Dict[str, str]]:
     return [{"role": "system", "content": system}, {"role": "user", "content": user}]
 
 
-def _build_qwen_messages(*, user_text: str, context_pack_json: str, lang: str, intent: str) -> List[Dict[str, str]]:
+def _build_answer_messages(*, user_text: str, context_pack_json: str, lang: str, intent: str) -> List[Dict[str, str]]:
     if lang == "zh":
         system = (
             "你是一个检索驱动的日记助理。\n"
@@ -155,8 +183,9 @@ def _build_qwen_messages(*, user_text: str, context_pack_json: str, lang: str, i
             "Schema: {answer: string, status: 'ok'|'not_recorded', evidence: {entry_ids: number[], card_ids: string[]}}\n"
             "硬规则：\n"
             "1) 若 intent=diary_qa：所有关于用户日记/历史的事实只能来自 CONTEXT_PACK_JSON。\n"
-            "2) 若 CONTEXT_PACK_JSON 中没有足够证据支撑用户问题（diary_qa），必须输出 status='not_recorded'，并且 answer 必须精确为：未记录。\n"
-            "3) 若 intent=general：可以回答常识，但不得声称来自日记；仍按 schema 输出。\n"
+            "2) 若 intent=self_profile：只能参考 recent_summaries / memory_cards / recent_chat_messages；只能基于其中重复出现的模式、习惯、主题和摘要，做谨慎概括，不得臆造。\n"
+            "3) 若 CONTEXT_PACK_JSON 中没有足够证据支撑用户问题（diary_qa 或 self_profile），必须输出 status='not_recorded'，并且 answer 必须精确为：未记录。\n"
+            "4) 若 intent=general：可以回答常识，但不得声称来自日记；仍按 schema 输出。\n"
             f"prompt_version={ANSWER_PROMPT_VERSION}"
         )
     else:
@@ -166,8 +195,9 @@ def _build_qwen_messages(*, user_text: str, context_pack_json: str, lang: str, i
             "Schema: {answer: string, status: 'ok'|'not_recorded', evidence: {entry_ids: number[], card_ids: string[]}}\n"
             "Hard rules:\n"
             "1) If intent=diary_qa: any diary/history facts MUST come only from CONTEXT_PACK_JSON.\n"
-            "2) If CONTEXT_PACK_JSON lacks sufficient evidence for diary_qa, output status='not_recorded' and answer MUST be exactly: Not recorded.\n"
-            "3) If intent=general: you may answer normally but never claim it came from the diary.\n"
+            "2) If intent=self_profile: use only recent_summaries / memory_cards / recent_chat_messages as support. Summarize only repeated patterns, habits, themes, emotions, or preferences supported by CONTEXT_PACK_JSON.\n"
+            "3) If CONTEXT_PACK_JSON lacks sufficient evidence for diary_qa or self_profile, output status='not_recorded' and answer MUST be exactly: Not recorded.\n"
+            "4) If intent=general: you may answer normally but never claim it came from the diary.\n"
             f"prompt_version={ANSWER_PROMPT_VERSION}"
         )
 
@@ -185,14 +215,14 @@ class CascadeBot:
         *,
         client: Optional[OllamaClient] = None,
         phi_model: str = DEFAULT_PHI_MODEL,
-        qwen_model: str = DEFAULT_QWEN_MODEL,
+        answer_model: str = DEFAULT_ANSWER_MODEL,
         default_top_k: int = 5,
         default_recent_n: int = 8,
         default_char_budget: int = 3000,
     ) -> None:
-        self.client = client or OllamaClient(timeout_s=QWEN_TIMEOUT_S)
+        self.client = client or OllamaClient(timeout_s=ANSWER_TIMEOUT_S)
         self.phi_model = phi_model
-        self.qwen_model = qwen_model
+        self.answer_model = answer_model
         self.default_top_k = int(default_top_k)
         self.default_recent_n = int(default_recent_n)
         self.default_char_budget = int(default_char_budget)
@@ -260,7 +290,14 @@ class CascadeBot:
         intent = str(route.get("intent") or "diary_qa").strip()
         lang = str(route.get("lang") or lang).strip()
 
-        if intent == "diary_qa" and not route.get("query"):
+        if _looks_like_personal_diary_query(user_text):
+            intent = "self_profile"
+            route["intent"] = intent
+            route["query"] = _personal_diary_query_hint(user_text)
+            route["top_k"] = max(int(route.get("top_k") or 0), self.default_top_k)
+            route["recent_n"] = max(int(route.get("recent_n") or 0), self.default_recent_n)
+
+        if intent in {"diary_qa", "self_profile"} and not route.get("query"):
             route["query"] = _fallback_query(user_text)
 
         if intent == "general":
@@ -268,19 +305,24 @@ class CascadeBot:
             route["top_k"] = 0
             route["recent_n"] = 0
 
-        pack = build_context_pack(
-            str(route.get("query") or ""),
-            top_k=int(route.get("top_k") or 0),
-            recent_n=int(route.get("recent_n") or 0),
-            char_budget=int(route.get("char_budget") or self.default_char_budget),
-        )
+        if intent == "self_profile":
+            pack = build_self_profile_pack(
+                char_budget=int(route.get("char_budget") or self.default_char_budget),
+            )
+        else:
+            pack = build_context_pack(
+                str(route.get("query") or ""),
+                top_k=int(route.get("top_k") or 0),
+                recent_n=int(route.get("recent_n") or 0),
+                char_budget=int(route.get("char_budget") or self.default_char_budget),
+            )
         pack_text = build_context_pack_text(pack)
 
-        qwen_msgs = _build_qwen_messages(user_text=user_text, context_pack_json=pack_text, lang=lang, intent=intent)
+        answer_msgs = _build_answer_messages(user_text=user_text, context_pack_json=pack_text, lang=lang, intent=intent)
 
         ans_text = ""
         ans_ms = 0
-        qwen_err: Optional[str] = None
+        answer_err: Optional[str] = None
 
         async def _local_chat(*, messages: List[Dict[str, str]], model: str, temperature: float, max_tokens: int, **_kw: Any) -> ProviderResult:
             text, ms = await self.client.chat_text(
@@ -307,15 +349,15 @@ class CascadeBot:
             if routed_generate is None:
                 # Router not available yet: keep legacy local behavior.
                 ans_text, ans_ms = await self.client.chat_text(
-                    model=self.qwen_model,
-                    messages=qwen_msgs,
-                    options={"temperature": 0, "top_p": 0.1, "num_predict": QWEN_NUM_PREDICT},
+                    model=self.answer_model,
+                    messages=answer_msgs,
+                    options={"temperature": 0, "top_p": 0.1, "num_predict": ANSWER_NUM_PREDICT},
                 )
             else:
                 gen_payload = {
                     "intent": intent,
                     "prompt_version": ANSWER_PROMPT_VERSION,
-                    "local_model": self.qwen_model,
+                    "local_model": self.answer_model,
                     "is_idle": False,
                     "fallback_backend": "local",
                 }
@@ -328,14 +370,14 @@ class CascadeBot:
 
                 if inspect.iscoroutinefunction(routed_generate):
                     res = await asyncio.wait_for(
-                        routed_generate(
-                            task="chat_answer",
-                            payload=gen_payload,
-                            messages=qwen_msgs,
-                            temperature=0.0,
-                            max_tokens=QWEN_NUM_PREDICT,
-                            local_chat=_local_chat,
-                        ),
+                            routed_generate(
+                                task="chat_answer",
+                                payload=gen_payload,
+                                messages=answer_msgs,
+                                temperature=0.0,
+                                max_tokens=ANSWER_NUM_PREDICT,
+                                local_chat=_local_chat,
+                            ),
                         timeout=max(1.0, remain2),
                     )
                 else:
@@ -344,42 +386,43 @@ class CascadeBot:
                             routed_generate,
                             task="chat_answer",
                             payload=gen_payload,
-                            messages=qwen_msgs,
+                            messages=answer_msgs,
                             temperature=0.0,
-                            max_tokens=QWEN_NUM_PREDICT,
+                            max_tokens=ANSWER_NUM_PREDICT,
                             local_chat=_local_chat,
                         ),
                         timeout=max(1.0, remain2),
                     )
                 ans_text, ans_ms = (res.content or ""), int(res.ms or 0)
         except asyncio.TimeoutError:
-            qwen_err = f"answer_timeout>{TOTAL_TIMEOUT_S}s"
+            answer_err = f"answer_timeout>{TOTAL_TIMEOUT_S}s"
             ans_text, ans_ms = "", 0
         except ProviderError as e:
-            qwen_err = f"answer_provider_error: {e}"
+            answer_err = f"answer_provider_error: {e}"
             ans_text, ans_ms = "", 0
         except Exception as e:
-            qwen_err = f"answer_failed: {type(e).__name__}: {e}"
+            answer_err = f"answer_failed: {type(e).__name__}: {e}"
             ans_text, ans_ms = "", 0
 
-        qwen_obj: Dict[str, Any] = {}
+        answer_obj: Dict[str, Any] = {}
         parse_err: Optional[str] = None
         try:
-            qwen_obj = json.loads(_extract_first_json_obj(ans_text))
-            if not isinstance(qwen_obj, dict):
-                qwen_obj = {}
+            answer_obj = json.loads(_extract_first_json_obj(ans_text))
+            if not isinstance(answer_obj, dict):
+                answer_obj = {}
         except Exception as e:
-            parse_err = f"qwen_json_parse_failed: {e}"
-            qwen_obj = {}
+            parse_err = f"answer_json_parse_failed: {e}"
+            answer_obj = {}
 
-        status = str(qwen_obj.get("status") or "").strip()
-        answer = str(qwen_obj.get("answer") or "").strip()
-        evidence = qwen_obj.get("evidence") if isinstance(qwen_obj.get("evidence"), dict) else {}
+        status = str(answer_obj.get("status") or "").strip()
+        answer = str(answer_obj.get("answer") or "").strip()
+        evidence = answer_obj.get("evidence") if isinstance(answer_obj.get("evidence"), dict) else {}
 
         not_recorded_text = "未记录" if lang == "zh" else "Not recorded"
+        service_unavailable_text = "模型暂时不可用，请稍后重试" if lang == "zh" else "Model temporarily unavailable. Please try again."
 
-        if intent == "diary_qa" and qwen_err:
-            out: Dict[str, Any] = {"reply": not_recorded_text}
+        if intent in {"diary_qa", "self_profile"} and answer_err:
+            out: Dict[str, Any] = {"reply": service_unavailable_text}
             if debug:
                 out["debug"] = {
                     "route": route,
@@ -387,21 +430,27 @@ class CascadeBot:
                     "route_err": route_err,
                     "context_pack_meta": pack.get("meta"),
                     "context_pack_len": len(pack_text),
-                    "models": {"phi": self.phi_model, "qwen": self.qwen_model},
+                    "models": {"route_model": self.phi_model, "answer_model": self.answer_model},
                     "answer_ms": int(ans_ms),
-                    "qwen_err": qwen_err,
+                    "answer_err": answer_err,
                     "elapsed_ms": int((time.perf_counter() - t0) * 1000),
                     "total_timeout_s": TOTAL_TIMEOUT_S,
                     "remaining_s": max(0.0, float(deadline - time.perf_counter())),
                 }
             return out
 
-        if intent == "diary_qa":
+        if intent in {"diary_qa", "self_profile"}:
             if status == "not_recorded":
-                answer = not_recorded_text
+                if intent == "self_profile":
+                    answer = fallback_self_profile_answer(pack, lang=lang) or not_recorded_text
+                else:
+                    answer = not_recorded_text
             if not answer:
-                answer = not_recorded_text
-                status = "not_recorded"
+                if intent == "self_profile":
+                    answer = fallback_self_profile_answer(pack, lang=lang) or not_recorded_text
+                else:
+                    answer = not_recorded_text
+                status = "not_recorded" if answer == not_recorded_text else "ok"
             if answer == not_recorded_text and status != "not_recorded":
                 status = "not_recorded"
         else:
@@ -417,12 +466,12 @@ class CascadeBot:
                 "route_err": route_err,
                 "context_pack_meta": pack.get("meta"),
                 "context_pack_len": len(pack_text),
-                "models": {"phi": self.phi_model, "qwen": self.qwen_model},
+                "models": {"route_model": self.phi_model, "answer_model": self.answer_model},
                 "answer_ms": int(ans_ms),
-                "qwen_err": qwen_err,
-                "qwen_status": status,
-                "qwen_parse_err": parse_err,
-                "qwen_evidence": evidence,
+                "answer_err": answer_err,
+                "answer_status": status,
+                "answer_parse_err": parse_err,
+                "answer_evidence": evidence,
                 "elapsed_ms": int((time.perf_counter() - t0) * 1000),
                 "total_timeout_s": TOTAL_TIMEOUT_S,
                 "remaining_s": max(0.0, float(deadline - time.perf_counter())),

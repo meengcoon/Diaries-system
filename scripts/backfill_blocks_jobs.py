@@ -48,11 +48,11 @@ def _delete_blocks_for_entry(entry_id: int) -> None:
         conn.close()
 
 
-def main() -> int:
+def main(argv: list[str] | None = None) -> int:
     p = argparse.ArgumentParser(description="Backfill entry_blocks + block_jobs for existing entries")
     p.add_argument("--limit", type=int, default=100000)
     p.add_argument("--rebuild", action="store_true", help="delete existing blocks/jobs and rebuild")
-    args = p.parse_args()
+    args = p.parse_args(argv)
 
     db.init_db()
     entries = _load_entries(limit=max(1, int(args.limit)))

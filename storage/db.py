@@ -22,6 +22,8 @@ To improve maintainability, the implementation is split into focused modules:
 - storage/repo_jobs.py    (entry_blocks + block_jobs + block_analysis)
 
 This file preserves the original public API by re-exporting functions.
+New or refactored modules should prefer importing from the focused repo modules
+directly instead of depending on this facade.
 """
 
 # Core (schema + connection helpers)
@@ -45,8 +47,13 @@ from .db_core import (  # noqa: F401
 # Entries / analysis
 from .repo_entries import (  # noqa: F401
     insert_entry,
+    get_entry,
+    list_entries_by_date,
+    update_entry_text,
+    delete_entry,
     save_entry_analysis,
     list_recent_entries,
+    list_recent_entries_overview,
     list_recent_entry_summaries,
     get_entry_analysis_brief,
 )
@@ -54,6 +61,11 @@ from .repo_audio import (  # noqa: F401
     insert_audio_entry,
     list_recent_audio_entries,
     list_recent_audio_analyses,
+    get_audio_entry,
+    upsert_audio_content_link,
+    get_audio_content_link,
+    count_audio_entries_pending_content,
+    list_audio_entries_pending_content,
 )
 
 # Memory
@@ -63,6 +75,19 @@ from .repo_mem import (  # noqa: F401
     upsert_mem_card,
     insert_mem_card_change,
     list_mem_card_changes,
+)
+from .repo_chat import (  # noqa: F401
+    create_chat_session,
+    update_chat_session,
+    get_chat_session,
+    list_chat_sessions,
+    list_chat_messages,
+    insert_chat_message,
+    list_recent_chat_messages,
+)
+from .repo_analysis_runs import (  # noqa: F401
+    insert_analysis_run,
+    list_analysis_runs,
 )
 
 # Retrieval (FTS)
@@ -74,6 +99,7 @@ from .repo_fts import (  # noqa: F401
 # Blocks / jobs / per-block analysis
 from .repo_jobs import (  # noqa: F401
     insert_entry_block,
+    replace_entry_blocks_and_jobs_atomic,
     list_entry_blocks,
     count_entry_blocks,
     get_entry_block,
@@ -124,25 +150,45 @@ __all__ = [
     "compute_sha256",
     # entries
     "insert_entry",
+    "get_entry",
+    "list_entries_by_date",
+    "update_entry_text",
+    "delete_entry",
     "save_entry_analysis",
     "list_recent_entries",
+    "list_recent_entries_overview",
     "list_recent_entry_summaries",
     "get_entry_analysis_brief",
     # audio
     "insert_audio_entry",
     "list_recent_audio_entries",
     "list_recent_audio_analyses",
+    "get_audio_entry",
+    "upsert_audio_content_link",
+    "get_audio_content_link",
+    "count_audio_entries_pending_content",
+    "list_audio_entries_pending_content",
     # mem
     "get_mem_card",
     "list_mem_cards",
     "upsert_mem_card",
     "insert_mem_card_change",
     "list_mem_card_changes",
+    "create_chat_session",
+    "update_chat_session",
+    "get_chat_session",
+    "list_chat_sessions",
+    "list_chat_messages",
+    "insert_chat_message",
+    "list_recent_chat_messages",
+    "insert_analysis_run",
+    "list_analysis_runs",
     # fts
     "upsert_entry_fts",
     "search_entry_ids_fts",
     # blocks/jobs
     "insert_entry_block",
+    "replace_entry_blocks_and_jobs_atomic",
     "list_entry_blocks",
     "count_entry_blocks",
     "get_entry_block",

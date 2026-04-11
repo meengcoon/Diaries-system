@@ -199,6 +199,10 @@ def init_db() -> None:
                 return True
         return False
 
+    def _table_columns(c: sqlite3.Connection, table: str) -> List[str]:
+        rows = c.execute(f"PRAGMA table_info('{table}')").fetchall()
+        return [str(r[1]) for r in rows]
+
     conn = connect()
     fk_was_disabled = False
     try:
@@ -210,10 +214,14 @@ def init_db() -> None:
                 created_at TEXT NOT NULL,
                 raw_text TEXT NOT NULL,
                 source TEXT,
-                sha256 TEXT NOT NULL
+                sha256 TEXT NOT NULL,
+                version INTEGER NOT NULL DEFAULT 1
             );
             """
         )
+        cols_entries = _table_columns(conn, "entries")
+        if "version" not in cols_entries:
+            conn.execute("ALTER TABLE entries ADD COLUMN version INTEGER NOT NULL DEFAULT 1;")
 
         # Decide whether we need to rebuild `entries` to drop a UNIQUE sha256 index.
         need_migrate_sha256 = _sha256_is_unique(conn)
@@ -236,14 +244,15 @@ def init_db() -> None:
                         created_at TEXT NOT NULL,
                         raw_text TEXT NOT NULL,
                         source TEXT,
-                        sha256 TEXT NOT NULL
+                        sha256 TEXT NOT NULL,
+                        version INTEGER NOT NULL DEFAULT 1
                     );
                     """
                 )
                 conn.execute(
                     """
-                    INSERT INTO entries_new(id, created_at, raw_text, source, sha256)
-                    SELECT id, created_at, raw_text, source, sha256 FROM entries;
+                    INSERT INTO entries_new(id, created_at, raw_text, source, sha256, version)
+                    SELECT id, created_at, raw_text, source, sha256, COALESCE(version, 1) FROM entries;
                     """
                 )
                 conn.execute("DROP TABLE entries;")
@@ -278,12 +287,20 @@ def init_db() -> None:
                 analysis_json TEXT NOT NULL,
                 model TEXT NOT NULL,
                 prompt_version TEXT NOT NULL,
+                entry_version INTEGER NOT NULL DEFAULT 1,
+                analysis_hash TEXT NOT NULL DEFAULT '',
                 created_at TEXT NOT NULL,
                 FOREIGN KEY(entry_id) REFERENCES entries(id) ON DELETE CASCADE
             );
             """
         )
+        cols_entry_analysis = _table_columns(conn, "entry_analysis")
+        if "entry_version" not in cols_entry_analysis:
+            conn.execute("ALTER TABLE entry_analysis ADD COLUMN entry_version INTEGER NOT NULL DEFAULT 1;")
+        if "analysis_hash" not in cols_entry_analysis:
+            conn.execute("ALTER TABLE entry_analysis ADD COLUMN analysis_hash TEXT NOT NULL DEFAULT '';")
         conn.execute("CREATE INDEX IF NOT EXISTS idx_entry_analysis_created_at ON entry_analysis(created_at);")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_entry_analysis_entry_version ON entry_analysis(entry_version);")
 
         # =====================
         # M3: Retrieval (FTS5)
@@ -339,6 +356,21 @@ def init_db() -> None:
         conn.execute("CREATE INDEX IF NOT EXISTS idx_mem_card_changes_card_id ON mem_card_changes(card_id);")
         conn.execute("CREATE INDEX IF NOT EXISTS idx_mem_card_changes_entry_id ON mem_card_changes(entry_id);")
         conn.execute("CREATE INDEX IF NOT EXISTS idx_mem_card_changes_created_at ON mem_card_changes(created_at);")
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS memory_update_applied (
+                entry_id INTEGER NOT NULL,
+                entry_version INTEGER NOT NULL,
+                analysis_hash TEXT NOT NULL,
+                created_at TEXT NOT NULL,
+                PRIMARY KEY(entry_id, entry_version),
+                FOREIGN KEY(entry_id) REFERENCES entries(id) ON DELETE CASCADE
+            );
+            """
+        )
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_memory_update_applied_hash ON memory_update_applied(analysis_hash, created_at);"
+        )
 
         # =====================
         # Step 1: entry_blocks + jobs
@@ -365,9 +397,13 @@ def init_db() -> None:
             CREATE TABLE IF NOT EXISTS block_jobs (
                 job_id INTEGER PRIMARY KEY AUTOINCREMENT,
                 block_id INTEGER NOT NULL,
+                entry_version INTEGER NOT NULL DEFAULT 1,
+                dedupe_key TEXT,
                 status TEXT NOT NULL,         -- pending|running|done|failed|skipped
                 attempts INTEGER NOT NULL,
                 last_error TEXT,
+                leased_by TEXT,
+                leased_until TEXT,
                 created_at TEXT NOT NULL,
                 updated_at TEXT NOT NULL,
                 FOREIGN KEY(block_id) REFERENCES entry_blocks(block_id) ON DELETE CASCADE,
@@ -375,8 +411,36 @@ def init_db() -> None:
             );
             """
         )
+        cols_block_jobs = _table_columns(conn, "block_jobs")
+        if "entry_version" not in cols_block_jobs:
+            conn.execute("ALTER TABLE block_jobs ADD COLUMN entry_version INTEGER NOT NULL DEFAULT 1;")
+        if "dedupe_key" not in cols_block_jobs:
+            conn.execute("ALTER TABLE block_jobs ADD COLUMN dedupe_key TEXT;")
+        if "leased_by" not in cols_block_jobs:
+            conn.execute("ALTER TABLE block_jobs ADD COLUMN leased_by TEXT;")
+        if "leased_until" not in cols_block_jobs:
+            conn.execute("ALTER TABLE block_jobs ADD COLUMN leased_until TEXT;")
+        conn.execute(
+            """
+            UPDATE block_jobs
+            SET entry_version = COALESCE(
+                (
+                    SELECT e.version
+                    FROM entry_blocks b
+                    JOIN entries e ON e.id = b.entry_id
+                    WHERE b.block_id = block_jobs.block_id
+                ),
+                1
+            )
+            WHERE COALESCE(entry_version, 0) <= 0
+            """
+        )
         conn.execute("CREATE INDEX IF NOT EXISTS idx_block_jobs_status ON block_jobs(status);")
         conn.execute("CREATE INDEX IF NOT EXISTS idx_block_jobs_updated_at ON block_jobs(updated_at);")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_block_jobs_lease ON block_jobs(status, leased_until, updated_at);")
+        conn.execute(
+            "CREATE UNIQUE INDEX IF NOT EXISTS idx_block_jobs_dedupe_key ON block_jobs(dedupe_key) WHERE dedupe_key IS NOT NULL;"
+        )
 
         # =====================
         # Step 2: block_analysis
@@ -397,6 +461,36 @@ def init_db() -> None:
         )
         conn.execute("CREATE INDEX IF NOT EXISTS idx_block_analysis_created_at ON block_analysis(created_at);")
         conn.execute("CREATE INDEX IF NOT EXISTS idx_block_analysis_ok ON block_analysis(ok);")
+
+        # =====================
+        # Step 2b: staged analysis runs (intermediate evidence/deep/normalize records)
+        # =====================
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS analysis_runs (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                target_type TEXT NOT NULL,      -- block|entry
+                target_id INTEGER NOT NULL,
+                stage TEXT NOT NULL,            -- evidence|deep|normalize|validate|final
+                backend TEXT NOT NULL,          -- local|cloud|rollup
+                provider TEXT,
+                model TEXT,
+                prompt_version TEXT NOT NULL,
+                status TEXT NOT NULL,           -- ok|failed|rejected
+                input_json TEXT,
+                output_json TEXT,
+                error TEXT,
+                ms INTEGER,
+                created_at TEXT NOT NULL
+            );
+            """
+        )
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_analysis_runs_target ON analysis_runs(target_type, target_id, created_at DESC);"
+        )
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_analysis_runs_stage_status ON analysis_runs(stage, status, created_at DESC);"
+        )
 
         # =====================
         # LLM cache + call auditing
@@ -441,24 +535,80 @@ def init_db() -> None:
         conn.execute("CREATE INDEX IF NOT EXISTS idx_llm_calls_request_hash ON llm_calls(request_hash);")
 
         # =====================
-        # Cloud sync state (file-level incremental watermark)
+        # Chat sessions + messages
         # =====================
         conn.execute(
             """
-            CREATE TABLE IF NOT EXISTS cloud_sync_state (
-                file_path TEXT PRIMARY KEY,
-                synced_bytes INTEGER NOT NULL DEFAULT 0,
-                last_file_size INTEGER NOT NULL DEFAULT 0,
-                last_source TEXT,
-                last_batch_id TEXT,
-                last_status TEXT,
-                last_error TEXT,
-                updated_at TEXT NOT NULL
+            CREATE TABLE IF NOT EXISTS chat_sessions (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL,
+                title TEXT NOT NULL,
+                summary TEXT,
+                pinned INTEGER NOT NULL DEFAULT 0
             );
             """
         )
-        conn.execute("CREATE INDEX IF NOT EXISTS idx_cloud_sync_state_updated_at ON cloud_sync_state(updated_at);")
-        conn.execute("CREATE INDEX IF NOT EXISTS idx_cloud_sync_state_status ON cloud_sync_state(last_status);")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_chat_sessions_updated_at ON chat_sessions(updated_at);")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_chat_sessions_pinned ON chat_sessions(pinned, updated_at);")
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS chat_messages (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                session_id INTEGER,
+                created_at TEXT NOT NULL,
+                role TEXT NOT NULL, -- user|assistant|system
+                mode TEXT NOT NULL, -- chat|voice_chat
+                text TEXT NOT NULL,
+                meta_json TEXT,
+                FOREIGN KEY(session_id) REFERENCES chat_sessions(id) ON DELETE SET NULL
+            );
+            """
+        )
+        cols_chat_messages = _table_columns(conn, "chat_messages")
+        if "session_id" not in cols_chat_messages:
+            conn.execute("ALTER TABLE chat_messages ADD COLUMN session_id INTEGER;")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_chat_messages_created_at ON chat_messages(created_at);")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_chat_messages_role_mode ON chat_messages(role, mode);")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_chat_messages_session_id ON chat_messages(session_id, created_at);")
+
+        legacy_count_row = conn.execute(
+            "SELECT COUNT(1) AS n FROM chat_messages WHERE session_id IS NULL"
+        ).fetchone()
+        legacy_count = int(legacy_count_row["n"] if legacy_count_row else 0)
+        if legacy_count > 0:
+            legacy_session = conn.execute(
+                "SELECT id FROM chat_sessions WHERE title='历史对话' ORDER BY id ASC LIMIT 1"
+            ).fetchone()
+            if legacy_session:
+                legacy_session_id = int(legacy_session["id"])
+            else:
+                now = _utc_now_iso()
+                cur = conn.execute(
+                    """
+                    INSERT INTO chat_sessions(created_at, updated_at, title, summary)
+                    VALUES(?,?,?,?)
+                    """,
+                    (now, now, "历史对话", "旧版本迁移过来的聊天记录"),
+                )
+                legacy_session_id = int(cur.lastrowid)
+            conn.execute(
+                "UPDATE chat_messages SET session_id=? WHERE session_id IS NULL",
+                (legacy_session_id,),
+            )
+            last_row = conn.execute(
+                """
+                SELECT MAX(created_at) AS updated_at
+                FROM chat_messages
+                WHERE session_id=?
+                """,
+                (legacy_session_id,),
+            ).fetchone()
+            updated_at = str(last_row["updated_at"] or _utc_now_iso()) if last_row else _utc_now_iso()
+            conn.execute(
+                "UPDATE chat_sessions SET updated_at=? WHERE id=?",
+                (updated_at, legacy_session_id),
+            )
 
         # =====================
         # Voice diary: raw audio + feature analysis
@@ -480,6 +630,26 @@ def init_db() -> None:
         )
         conn.execute("CREATE INDEX IF NOT EXISTS idx_audio_entries_created_at ON audio_entries(created_at);")
         conn.execute("CREATE INDEX IF NOT EXISTS idx_audio_entries_diary_date ON audio_entries(diary_date);")
+
+        # Track whether audio content has been transcribed/ingested for cloud text analysis.
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS audio_content_links (
+                audio_entry_id INTEGER PRIMARY KEY,
+                entry_id INTEGER,
+                status TEXT NOT NULL, -- pending|done|failed
+                provider TEXT,
+                error TEXT,
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL,
+                FOREIGN KEY(audio_entry_id) REFERENCES audio_entries(id) ON DELETE CASCADE,
+                FOREIGN KEY(entry_id) REFERENCES entries(id) ON DELETE SET NULL
+            );
+            """
+        )
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_audio_content_links_status ON audio_content_links(status);")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_audio_content_links_entry_id ON audio_content_links(entry_id);")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_audio_content_links_updated_at ON audio_content_links(updated_at);")
 
         conn.commit()
 

@@ -8,8 +8,10 @@ import time
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional, Tuple
 
-from storage.db import get_mem_card, insert_mem_card_change, list_mem_cards, upsert_mem_card
 from core.settings import MEM_UPDATE_MODEL as DEFAULT_PHI_MODEL, PROMPT_VERSION_MEM_UPDATE
+from storage.db_core import compute_sha256
+from storage.repo_entries import is_memory_update_applied, record_memory_update_applied
+from storage.repo_mem import get_mem_card, insert_mem_card_change, list_mem_cards, upsert_mem_card
 
 PROMPT_VERSION = PROMPT_VERSION_MEM_UPDATE
 
@@ -399,15 +401,58 @@ async def update_mem_cards_for_entry(
     *,
     entry_id: int,
     entry_analysis: Dict[str, Any],
+    entry_version: Optional[int] = None,
+    analysis_hash: Optional[str] = None,
     client: Optional[Any] = None,
     model: Optional[str] = None,
     top_n: int = 5,
 ) -> Dict[str, Any]:
     """Compatibility wrapper for scripts that call update_mem_cards_for_entry."""
-    return await update_mem_cards(
+    normalized_analysis = entry_analysis if isinstance(entry_analysis, dict) else {}
+    resolved_entry_version = int(
+        entry_version
+        or normalized_analysis.get("entry_version")
+        or (normalized_analysis.get("rollup_meta") or {}).get("entry_version")
+        or 0
+    )
+    resolved_analysis_hash = str(
+        analysis_hash
+        or normalized_analysis.get("analysis_hash")
+        or compute_sha256(json.dumps(normalized_analysis, ensure_ascii=False, sort_keys=True))
+    )
+    if resolved_entry_version > 0 and is_memory_update_applied(
         entry_id=int(entry_id),
-        analysis_json=entry_analysis if isinstance(entry_analysis, dict) else {},
+        entry_version=resolved_entry_version,
+        analysis_hash=resolved_analysis_hash,
+    ):
+        return {
+            "ok": True,
+            "updated": 0,
+            "changes": 0,
+            "card_ids": [],
+            "candidates": 0,
+            "prompt_version": PROMPT_VERSION,
+            "ms": 0,
+            "error": None,
+            "attempted": False,
+            "skipped_reason": "already_applied",
+            "entry_version": resolved_entry_version,
+            "analysis_hash": resolved_analysis_hash,
+        }
+
+    res = await update_mem_cards(
+        entry_id=int(entry_id),
+        analysis_json=normalized_analysis,
         client=client,
         model=model,
         top_n=int(top_n),
     )
+    if bool(res.get("ok")) and resolved_entry_version > 0:
+        record_memory_update_applied(
+            entry_id=int(entry_id),
+            entry_version=resolved_entry_version,
+            analysis_hash=resolved_analysis_hash,
+        )
+    res["entry_version"] = resolved_entry_version
+    res["analysis_hash"] = resolved_analysis_hash
+    return res

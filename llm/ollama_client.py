@@ -2,11 +2,12 @@ from __future__ import annotations
 
 import asyncio
 import json
-import os
 import time
 import urllib.error
 import urllib.request
 from typing import Any, Dict, List, Optional, Tuple
+
+from core.settings import env_bool, env_float, env_int, env_str
 
 _RETRY_HTTP_STATUS = {408, 425, 429, 500, 502, 503, 504}
 
@@ -24,7 +25,6 @@ def _snip(text: str | None, n: int = 800) -> str:
         return s
     return s[:n] + "…"
 
-
 class OllamaClient:
     """Minimal Ollama HTTP client without third-party runtime dependency."""
 
@@ -36,13 +36,14 @@ class OllamaClient:
         max_retries: int | None = None,
         keep_alive: str | None = None,
     ) -> None:
-        self.base_url = (base_url or os.getenv("OLLAMA_BASE_URL", "http://127.0.0.1:11434")).rstrip("/")
+        self.base_url = (base_url or env_str("OLLAMA_BASE_URL", "http://127.0.0.1:11434")).rstrip("/")
         self.timeout_s = float(timeout_s)
-        self.connect_timeout_s = float(os.getenv("OLLAMA_CONNECT_TIMEOUT_S", "10"))
+        self.connect_timeout_s = env_float("OLLAMA_CONNECT_TIMEOUT_S", 10.0)
         self.read_timeout_s = None if self.timeout_s <= 0 else self.timeout_s
-        self.max_retries = int(os.getenv("OLLAMA_MAX_RETRIES", "2")) if max_retries is None else int(max_retries)
-        self.retry_backoff_s = float(os.getenv("OLLAMA_RETRY_BACKOFF_S", "0.6"))
-        self.default_keep_alive = keep_alive or os.getenv("OLLAMA_KEEP_ALIVE", "30m")
+        self.max_retries = env_int("OLLAMA_MAX_RETRIES", 2) if max_retries is None else int(max_retries)
+        self.retry_backoff_s = env_float("OLLAMA_RETRY_BACKOFF_S", 0.6)
+        self.default_keep_alive = keep_alive or env_str("OLLAMA_KEEP_ALIVE", "30m")
+        self.default_think = env_bool("OLLAMA_THINK", False)
 
     async def __aenter__(self) -> "OllamaClient":
         return self
@@ -113,6 +114,7 @@ class OllamaClient:
             "stream": False,
             "options": options or {},
             "keep_alive": keep_alive or self.default_keep_alive,
+            "think": self.default_think,
         }
 
         last_exc: Exception | None = None
@@ -188,5 +190,5 @@ class OllamaClient:
     ) -> Tuple[str, int]:
         data = await self.chat(model=model, messages=messages, options=options)
         msg = data.get("message") or {}
-        content = msg.get("content") or ""
+        content = msg.get("content") or msg.get("thinking") or ""
         return str(content), int(data.get("_ms", 0))

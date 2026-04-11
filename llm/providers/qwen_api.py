@@ -1,12 +1,18 @@
 from __future__ import annotations
 
 import json
+import ssl
 import time
 import urllib.error
 import urllib.request
 from typing import Any, Dict, List, Optional
 
 from .base import BaseProvider, ProviderError, ProviderResult
+
+try:
+    import certifi  # type: ignore
+except Exception:  # pragma: no cover
+    certifi = None
 
 
 def _is_retryable_status(status: int) -> bool:
@@ -22,6 +28,15 @@ class QwenProvider(BaseProvider):
         self.api_key = api_key
         self.base_url = base_url.rstrip("/")
 
+    def _ssl_context(self) -> ssl.SSLContext:
+        cafile = None
+        if certifi is not None:
+            try:
+                cafile = certifi.where()
+            except Exception:
+                cafile = None
+        return ssl.create_default_context(cafile=cafile)
+
     def _post_json(self, url: str, headers: Dict[str, str], payload: Dict[str, Any], timeout_s: float) -> Dict[str, Any]:
         req = urllib.request.Request(
             url=url,
@@ -29,7 +44,7 @@ class QwenProvider(BaseProvider):
             headers=headers,
             method="POST",
         )
-        with urllib.request.urlopen(req, timeout=timeout_s) as resp:
+        with urllib.request.urlopen(req, timeout=timeout_s, context=self._ssl_context()) as resp:
             raw = resp.read().decode("utf-8", errors="replace")
             return json.loads(raw) if raw else {}
 

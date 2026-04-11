@@ -1,9 +1,14 @@
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Any, Dict, List, Optional
 
-from .db_core import connect, _conn_ro, _conn_txn, _parse_iso_utc, _utc_now_dt, _utc_now_iso
+from .db_core import connect, _conn_ro, _conn_txn, _parse_iso_utc, _utc_now_dt, _utc_now_iso, compute_sha256
+
+
+def _job_dedupe_key(*, entry_id: int, entry_version: int, idx: int, raw_text: str) -> str:
+    text_hash = compute_sha256((raw_text or "").strip())
+    return f"{int(entry_id)}:{int(entry_version)}:{int(idx)}:{text_hash}"
 
 
 # =====================
@@ -46,6 +51,101 @@ def insert_entry_block(
             ).fetchone()
             block_id = int(row["block_id"]) if row else 0
     return block_id
+
+
+def replace_entry_blocks_and_jobs_atomic(
+    *,
+    entry_id: int,
+    raw_text: str,
+    blocks: List[Dict[str, Any]],
+    created_at: Optional[str] = None,
+) -> Dict[str, Any]:
+    """Atomically replace one entry's text, blocks, and queued jobs.
+
+    Blocks must be precomputed by the caller outside the transaction to keep
+    write lock duration short and avoid reverse dependencies from repo -> pipeline.
+    Within a single write transaction we:
+    - update the entry text + sha256
+    - delete existing entry_analysis
+    - delete existing entry_blocks (cascades block_jobs + block_analysis)
+    - recreate entry_blocks and their pending block_jobs
+
+    This guarantees callers never observe a half-rebuilt analysis chain.
+    """
+    raw_text = raw_text or ""
+    created_at = created_at or _utc_now_iso()
+    sha = compute_sha256(raw_text.strip())
+    now = _utc_now_iso()
+    block_ids: List[int] = []
+    entry_version = 0
+
+    conn = connect()
+    try:
+        conn.execute("BEGIN IMMEDIATE;")
+        cur = conn.execute(
+            """
+            UPDATE entries
+            SET raw_text=?, sha256=?, version=COALESCE(version, 1) + 1
+            WHERE id=?
+            """,
+            (raw_text, sha, int(entry_id)),
+        )
+        if int(cur.rowcount or 0) <= 0:
+            raise ValueError(f"entry not found: {entry_id}")
+        version_row = conn.execute("SELECT version FROM entries WHERE id=? LIMIT 1", (int(entry_id),)).fetchone()
+        entry_version = int(version_row["version"] or 0) if version_row else 0
+        if entry_version <= 0:
+            raise RuntimeError(f"failed to resolve entry version for entry {entry_id}")
+        conn.execute("DELETE FROM entry_analysis WHERE entry_id=?", (int(entry_id),))
+        conn.execute("DELETE FROM entry_blocks WHERE entry_id=?", (int(entry_id),))
+
+        for b in blocks:
+            block_idx = int(b.get("idx", 0))
+            block_text = str(b.get("raw_text") or b.get("text") or "")
+            cur = conn.execute(
+                """
+                INSERT INTO entry_blocks(entry_id, idx, title, raw_text, created_at)
+                VALUES(?,?,?,?,?)
+                """,
+                (
+                    int(entry_id),
+                    block_idx,
+                    (b.get("title") or None),
+                    block_text,
+                    created_at,
+                ),
+            )
+            block_id = int(cur.lastrowid or 0)
+            if block_id <= 0:
+                raise RuntimeError(f"failed to create block for entry {entry_id}")
+            block_ids.append(block_id)
+            conn.execute(
+                """
+                INSERT INTO block_jobs(block_id, entry_version, dedupe_key, status, attempts, last_error, leased_by, leased_until, created_at, updated_at)
+                VALUES(?,?,?,?,?,?,?,?,?,?)
+                """,
+                (
+                    block_id,
+                    entry_version,
+                    _job_dedupe_key(entry_id=int(entry_id), entry_version=entry_version, idx=block_idx, raw_text=block_text),
+                    "pending",
+                    0,
+                    None,
+                    None,
+                    None,
+                    now,
+                    now,
+                ),
+            )
+
+        conn.commit()
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
+        conn.close()
+
+    return {"queued_blocks": len(block_ids), "block_ids": block_ids, "entry_version": entry_version}
 
 
 def list_entry_blocks(entry_id: int) -> List[Dict[str, Any]]:
@@ -93,9 +193,13 @@ def get_entry_block(block_id: int) -> Optional[Dict[str, Any]]:
 def insert_block_job(
     *,
     block_id: int,
+    entry_version: Optional[int] = None,
+    dedupe_key: Optional[str] = None,
     status: str = "pending",
     attempts: int = 0,
     last_error: Optional[str] = None,
+    leased_by: Optional[str] = None,
+    leased_until: Optional[str] = None,
     updated_at: Optional[str] = None,
     created_at: Optional[str] = None,
 ) -> int:
@@ -108,17 +212,53 @@ def insert_block_job(
     updated_at = updated_at or now
 
     with _conn_txn() as conn:
+        if entry_version is None or not dedupe_key:
+            block_row = conn.execute(
+                """
+                SELECT b.entry_id, b.idx, b.raw_text, e.version AS entry_version
+                FROM entry_blocks b
+                JOIN entries e ON e.id = b.entry_id
+                WHERE b.block_id=?
+                LIMIT 1
+                """,
+                (int(block_id),),
+            ).fetchone()
+            if not block_row:
+                raise ValueError(f"block not found: {block_id}")
+            resolved_entry_version = int(block_row["entry_version"] or 1)
+            entry_version = int(entry_version or resolved_entry_version)
+            dedupe_key = dedupe_key or _job_dedupe_key(
+                entry_id=int(block_row["entry_id"]),
+                entry_version=int(entry_version),
+                idx=int(block_row["idx"] or 0),
+                raw_text=str(block_row["raw_text"] or ""),
+            )
         cur = conn.execute(
             """
-            INSERT INTO block_jobs(block_id, status, attempts, last_error, created_at, updated_at)
-            VALUES(?,?,?,?,?,?)
+            INSERT INTO block_jobs(block_id, entry_version, dedupe_key, status, attempts, last_error, leased_by, leased_until, created_at, updated_at)
+            VALUES(?,?,?,?,?,?,?,?,?,?)
             ON CONFLICT(block_id) DO UPDATE SET
+                entry_version=excluded.entry_version,
+                dedupe_key=excluded.dedupe_key,
                 status=excluded.status,
                 attempts=excluded.attempts,
                 last_error=excluded.last_error,
+                leased_by=excluded.leased_by,
+                leased_until=excluded.leased_until,
                 updated_at=excluded.updated_at
             """,
-            (int(block_id), str(status), int(attempts), last_error, created_at, updated_at),
+            (
+                int(block_id),
+                int(entry_version or 1),
+                str(dedupe_key or ""),
+                str(status),
+                int(attempts),
+                last_error,
+                leased_by,
+                leased_until,
+                created_at,
+                updated_at,
+            ),
         )
         job_id = int(cur.lastrowid or 0)
         if job_id == 0:
@@ -146,6 +286,7 @@ def list_pending_block_jobs(limit: int = 50) -> List[Dict[str, Any]]:
             """
             SELECT
                 j.job_id, j.block_id, j.status, j.attempts, j.last_error, j.updated_at,
+                j.entry_version, j.dedupe_key, j.leased_by, j.leased_until,
                 b.entry_id, b.idx, b.title, b.raw_text, b.created_at AS block_created_at
             FROM block_jobs j
             JOIN entry_blocks b ON b.block_id = j.block_id
@@ -173,18 +314,19 @@ def reset_stale_running_block_jobs(stale_seconds: int = 1800) -> int:
 
     with _conn_txn() as conn:
         rows = conn.execute(
-            "SELECT job_id, updated_at FROM block_jobs WHERE status='running'"
+            "SELECT job_id, updated_at, leased_until FROM block_jobs WHERE status='running'"
         ).fetchall()
 
         to_fail: List[int] = []
         for r in rows:
-            updated_at = str(r["updated_at"])
-            dt = _parse_iso_utc(updated_at)
+            lease_until = str(r["leased_until"] or "")
+            dt = _parse_iso_utc(lease_until) if lease_until else None
             if dt is None:
-                # If parsing fails, be conservative: do not touch it.
+                updated_at = str(r["updated_at"])
+                dt = _parse_iso_utc(updated_at)
+            if dt is None:
                 continue
-            age = (now - dt).total_seconds()
-            if age >= stale_seconds:
+            if (lease_until and now >= dt) or ((not lease_until) and (now - dt).total_seconds() >= stale_seconds):
                 to_fail.append(int(r["job_id"]))
 
         if not to_fail:
@@ -197,10 +339,12 @@ def reset_stale_running_block_jobs(stale_seconds: int = 1800) -> int:
             UPDATE block_jobs
             SET status='failed',
                 last_error=?,
+                leased_by=NULL,
+                leased_until=NULL,
                 updated_at=?
             WHERE job_id IN ({qmarks})
             """,
-            (f"stale running > {stale_seconds}s", now_s, *to_fail),
+            (f"lease expired > {stale_seconds}s", now_s, *to_fail),
         )
         return len(to_fail)
 
@@ -209,6 +353,8 @@ def claim_next_block_job(
     *,
     retry_failed: bool = False,
     max_attempts: int = 3,
+    lease_seconds: int = 1800,
+    lease_owner: Optional[str] = None,
 ) -> Optional[Dict[str, Any]]:
     """Atomically claim ONE job and return its full payload (job + block fields).
 
@@ -220,6 +366,9 @@ def claim_next_block_job(
     """
     now_s = _utc_now_iso()
     max_attempts = int(max_attempts)
+    lease_seconds = max(1, int(lease_seconds))
+    lease_owner = str(lease_owner or "analysis_worker")
+    lease_until = (_utc_now_dt() + timedelta(seconds=lease_seconds)).isoformat(timespec="seconds")
 
     # Use a dedicated connection so we can explicitly start BEGIN IMMEDIATE.
     conn = connect()
@@ -233,9 +382,12 @@ def claim_next_block_job(
         placeholders = ",".join(["?"] * len(statuses))
         row = conn.execute(
             f"""
-            SELECT job_id, block_id, status, attempts
-            FROM block_jobs
-            WHERE status IN ({placeholders})
+            SELECT j.job_id, j.block_id, j.status, j.attempts
+            FROM block_jobs j
+            JOIN entry_blocks b ON b.block_id = j.block_id
+            JOIN entries e ON e.id = b.entry_id
+            WHERE j.status IN ({placeholders})
+              AND j.entry_version = e.version
               AND attempts < ?
             ORDER BY updated_at ASC, job_id ASC
             LIMIT 1
@@ -254,10 +406,12 @@ def claim_next_block_job(
             UPDATE block_jobs
             SET status='running',
                 attempts=attempts+1,
+                leased_by=?,
+                leased_until=?,
                 updated_at=?
             WHERE job_id=?
             """,
-            (now_s, job_id),
+            (lease_owner, lease_until, now_s, job_id),
         )
         if cur.rowcount != 1:
             conn.rollback()
@@ -267,10 +421,13 @@ def claim_next_block_job(
             """
             SELECT
                 j.job_id, j.block_id, j.status, j.attempts, j.last_error, j.updated_at,
+                j.entry_version, j.dedupe_key, j.leased_by, j.leased_until,
                 b.entry_id, b.idx, b.title, b.raw_text, b.created_at AS block_created_at
             FROM block_jobs j
             JOIN entry_blocks b ON b.block_id = j.block_id
+            JOIN entries e ON e.id = b.entry_id
             WHERE j.job_id=?
+              AND j.entry_version = e.version
             """,
             (job_id,),
         ).fetchone()
@@ -295,6 +452,8 @@ def mark_block_job_ok(job_id: int) -> None:
             UPDATE block_jobs
             SET status='done',
                 last_error=NULL,
+                leased_by=NULL,
+                leased_until=NULL,
                 updated_at=?
             WHERE job_id=?
             """,
@@ -311,6 +470,8 @@ def mark_block_job_failed(job_id: int, last_error: str | None = None) -> None:
             UPDATE block_jobs
             SET status='failed',
                 last_error=?,
+                leased_by=NULL,
+                leased_until=NULL,
                 updated_at=?
             WHERE job_id=?
             """,
@@ -323,7 +484,7 @@ def mark_block_job_skipped(job_id: int, last_error: str | None = None) -> None:
     now_s = _utc_now_iso()
     with _conn_txn() as conn:
         conn.execute(
-            "UPDATE block_jobs SET status='skipped', last_error=?, updated_at=? WHERE job_id=?",
+            "UPDATE block_jobs SET status='skipped', last_error=?, leased_by=NULL, leased_until=NULL, updated_at=? WHERE job_id=?",
             (last_error, now_s, int(job_id)),
         )
 
@@ -394,6 +555,7 @@ def list_entry_blocks_with_analysis(entry_id: int) -> List[Dict[str, Any]]:
             SELECT
                 b.block_id, b.entry_id, b.idx, b.title, b.raw_text, b.created_at AS block_created_at,
                 j.job_id, j.status AS job_status, j.attempts, j.last_error, j.updated_at AS job_updated_at,
+                j.entry_version, j.dedupe_key, j.leased_by, j.leased_until,
                 a.analysis_json, a.model AS analysis_model, a.prompt_version AS analysis_prompt_version,
                 a.created_at AS analysis_created_at, a.ok AS analysis_ok, a.error AS analysis_error
             FROM entry_blocks b

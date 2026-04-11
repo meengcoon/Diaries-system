@@ -1,41 +1,47 @@
 from __future__ import annotations
 
-import os
-import subprocess
-import sys
 import logging
-import json
-import uuid
-from dataclasses import dataclass
-from datetime import datetime, timezone
 from pathlib import Path
-from typing import Optional
+from typing import Any, Dict, Optional
 
 from fastapi import APIRouter, BackgroundTasks, File, Form, HTTPException, Query, Request, UploadFile
 from pydantic import BaseModel
 
-from cloud.sync_client import cloud_sync_enabled, sync_diary_file_to_cloud, sync_diary_file_to_cloud_bg
+from core.settings import env_int, env_str
 from storage.db_core import connect
-from storage.db import insert_audio_entry, list_recent_audio_analyses, list_recent_audio_entries
-from pipeline.audio_features import analyze_audio_file, build_voice_profile
+from storage.repo_audio import list_recent_audio_entries
+from storage.repo_entries import (
+    delete_entry,
+    get_entry,
+    list_entries_by_date,
+    list_recent_entries_overview,
+)
+from services.analysis_service import (
+    analysis_primary_backend,
+    normalize_provider,
+    queue_entry_analysis,
+    run_analyze_latest_bg,
+)
+from services.diary_service import (
+    append_daily_backup_entry,
+    date_from_created_at,
+    diaries_dir,
+    get_audio_detail_payload,
+    get_audio_profile_payload,
+    reanalyze_audio_diary_payload,
+    rewrite_daily_backup_from_db,
+    save_audio_diary_payload,
+    safe_diary_path,
+)
+from services.entry_ingest_service import replace_entry_content_atomic
+from services.entry_service import get_entry_detail_payload
+from services.media_service import build_audio_file_response, build_transcript_profile
 from utils.timeutil import utc_now_iso, local_today_str
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
-MAX_AUDIO_UPLOAD_BYTES = int(os.getenv("DIARY_MAX_AUDIO_UPLOAD_MB", "25")) * 1024 * 1024
-
-
-# DiaryEntry 仅用于 legacy bot.entries 的增量追加；如果 diary_bot 未导出该类型，使用同字段的本地 dataclass 兜底。
-try:
-    from diary_bot import DiaryEntry  # type: ignore
-except Exception:
-
-    @dataclass
-    class DiaryEntry:  # type: ignore
-        date: datetime
-        text: str
-        path: str
+MAX_AUDIO_UPLOAD_BYTES = env_int("DIARY_MAX_AUDIO_UPLOAD_MB", 25) * 1024 * 1024
 
 
 class SaveDiaryRequest(BaseModel):
@@ -43,9 +49,21 @@ class SaveDiaryRequest(BaseModel):
     date: Optional[str] = None
 
 
-class SyncExistingRequest(BaseModel):
-    limit: int = 30
-    newest_first: bool = True
+class UpdateDiaryRequest(BaseModel):
+    id: int
+    text: str
+
+
+class DeleteDiaryRequest(BaseModel):
+    id: int
+
+
+class ReanalyzeDiaryRequest(BaseModel):
+    id: int
+    preferred_provider: str = "deepseek"
+    force_reanalyze: bool = True
+    max_attempts: Optional[int] = None
+    job_timeout_s: Optional[int] = None
 
 
 class AnalyzeLatestRequest(BaseModel):
@@ -57,71 +75,33 @@ class AnalyzeLatestRequest(BaseModel):
     job_timeout_s: int = 180
 
 
-def _diaries_dir(request: Request) -> Path:
-    base_dir = Path(getattr(request.app.state, "base_dir", Path(__file__).resolve().parent))
-    path = base_dir / "diaries"
-    path.mkdir(parents=True, exist_ok=True)
-    return path
-
-
-def _safe_diary_path(diaries_dir: Path, date_str: str) -> Path:
-    try:
-        datetime.strptime(date_str, "%Y-%m-%d")
-    except Exception:
-        raise HTTPException(status_code=400, detail={"code": "INVALID_DATE", "message": "date must be YYYY-MM-DD"})
-    return diaries_dir / f"{date_str}.txt"
-
-
-def _audio_dir(request: Request, date_str: str) -> Path:
-    diaries_dir = _diaries_dir(request)
-    _safe_diary_path(diaries_dir, date_str)  # validate date
-    audio_path = diaries_dir / "audio" / date_str
-    audio_path.mkdir(parents=True, exist_ok=True)
-    return audio_path
-
-
-def _safe_audio_ext(filename: str, content_type: str) -> str:
-    suffix = (Path(filename or "").suffix or "").lower()
-    allow = {".webm", ".wav", ".m4a", ".mp3", ".ogg", ".opus", ".aac"}
-    if suffix in allow:
-        return suffix
-
-    ct = (content_type or "").lower()
-    if "webm" in ct:
-        return ".webm"
-    if "wav" in ct:
-        return ".wav"
-    if "mpeg" in ct or "mp3" in ct:
-        return ".mp3"
-    if "ogg" in ct:
-        return ".ogg"
-    if "mp4" in ct or "m4a" in ct:
-        return ".m4a"
-    return ".webm"
-
+class ReanalyzeAudioRequest(BaseModel):
+    id: int
+    preferred_provider: str = "deepseek"
+    force_reanalyze: bool = False
 
 @router.get("/api/diary/list")
 async def list_diaries(request: Request, limit: int = Query(default=30, ge=1, le=365)):
-    diaries_dir = _diaries_dir(request)
-    files = sorted(diaries_dir.glob("*.txt"), key=lambda p: p.stem, reverse=True)
-
+    rows = list_recent_entries_overview(
+        limit=int(limit),
+        max_attempts=env_int("DIARY_ANALYZE_MAX_ATTEMPTS", 8),
+    )
     items = []
-    for p in files[:limit]:
-        stat = p.stat()
-        text = p.read_text(encoding="utf-8", errors="ignore")
-        preview = ""
-        for line in text.splitlines():
-            line = line.strip()
-            if line and not line.startswith("---"):
-                preview = line[:80]
-                break
+    for r in rows:
+        created_at = str(r.get("created_at") or "")
+        text = str(r.get("raw_text") or "")
+        preview = " ".join(text.strip().split())[:80]
         items.append(
             {
-                "date": p.stem,
-                "file": str(p),
-                "size_bytes": stat.st_size,
-                "updated_at": datetime.fromtimestamp(stat.st_mtime, tz=timezone.utc).isoformat(),
+                "entry_id": int(r.get("id") or 0),
+                "date": created_at[:10] if len(created_at) >= 10 else "",
+                "created_at": created_at,
                 "preview": preview,
+                "size_bytes": len(text.encode("utf-8")),
+                "analysis_ready": bool(r.get("analysis_ready")),
+                "analysis_status": str(r.get("analysis_status") or "idle"),
+                "analysis_summary": str(r.get("analysis_summary") or ""),
+                "analysis_error": str(r.get("analysis_error") or ""),
             }
         )
 
@@ -130,8 +110,8 @@ async def list_diaries(request: Request, limit: int = Query(default=30, ge=1, le
 
 @router.get("/api/diary/read")
 async def read_diary(request: Request, date: str = Query(...)):
-    diaries_dir = _diaries_dir(request)
-    file_path = _safe_diary_path(diaries_dir, date)
+    diaries_path = diaries_dir(request)
+    file_path = safe_diary_path(diaries_path, date)
     if not file_path.exists():
         raise HTTPException(status_code=404, detail={"code": "NOT_FOUND", "message": f"diary not found: {date}"})
 
@@ -139,71 +119,137 @@ async def read_diary(request: Request, date: str = Query(...)):
     return {"ok": True, "date": date, "file": str(file_path), "text": text}
 
 
+@router.get("/api/diary/entry")
+async def read_diary_entry(id: int = Query(..., ge=1)):
+    detail = get_entry_detail_payload(int(id))
+    if not detail:
+        raise HTTPException(status_code=404, detail={"code": "NOT_FOUND", "message": f"entry not found: {id}"})
+    return detail
+
+
+@router.put("/api/diary/entry")
+async def update_diary_entry(req: UpdateDiaryRequest, request: Request, background_tasks: BackgroundTasks):
+    entry = get_entry(int(req.id))
+    if not entry:
+        raise HTTPException(status_code=404, detail={"code": "NOT_FOUND", "message": f"entry not found: {req.id}"})
+
+    text = str(req.text or "").strip()
+    if not text:
+        raise HTTPException(status_code=400, detail={"code": "INVALID_INPUT", "message": "empty text is not allowed"})
+    if len(text) > 8000:
+        raise HTTPException(status_code=413, detail={"code": "INVALID_INPUT", "message": f"text too long: {len(text)} chars (max 8000)"})
+
+    rebuild = replace_entry_content_atomic(
+        entry_id=int(req.id),
+        raw_text=text,
+        created_at=str(entry.get("created_at") or utc_now_iso()),
+    )
+    date_str = date_from_created_at(str(entry.get("created_at") or ""))
+    file_path: Optional[Path] = None
+    backup_warning = ""
+    try:
+        file_path = rewrite_daily_backup_from_db(request=request, date_str=date_str)
+    except Exception as e:
+        backup_warning = f"daily backup rewrite failed: {type(e).__name__}: {e}"
+        logger.warning(backup_warning)
+
+    provider = normalize_provider(env_str("DIARY_SAVE_PREFERRED_PROVIDER") or env_str("CLOUD_DEFAULT_PROVIDER", "deepseek") or "deepseek")
+    max_attempts = env_int("DIARY_ANALYZE_MAX_ATTEMPTS", 8)
+    job_timeout_s = env_int("DIARY_ANALYZE_JOB_TIMEOUT_S", 180)
+    queue_entry_analysis(
+        background_tasks,
+        base_dir=Path(getattr(request.app.state, "base_dir", Path(__file__).resolve().parent)),
+        entry_id=int(req.id),
+        preferred_provider=provider,
+        max_attempts=max_attempts,
+        job_timeout_s=job_timeout_s,
+        force_reanalyze=True,
+    )
+    detail = get_entry_detail_payload(int(req.id)) or {}
+    return {
+        "ok": True,
+        "entry_id": int(req.id),
+        "file": str(file_path) if file_path else "",
+        "backup_warning": backup_warning,
+        "queued_blocks": int(rebuild.get("queued_blocks", 0) or 0),
+        "block_ids": rebuild.get("block_ids") or [],
+        "analysis_ok": bool(detail.get("analysis_ready")),
+        "analysis_status": str(detail.get("analysis_status") or "pending"),
+        "analysis_backend": analysis_primary_backend(),
+        "analysis_queued": True,
+        "entry_detail": detail,
+        "failure_reasons": detail.get("failure_reasons") or [],
+    }
+
+
+@router.delete("/api/diary/entry")
+async def delete_diary_entry(request: Request, id: int = Query(..., ge=1)):
+    entry = get_entry(int(id))
+    if not entry:
+        raise HTTPException(status_code=404, detail={"code": "NOT_FOUND", "message": f"entry not found: {id}"})
+    date_str = date_from_created_at(str(entry.get("created_at") or ""))
+    delete_entry(int(id))
+    file_path = rewrite_daily_backup_from_db(request=request, date_str=date_str)
+    remaining = list_entries_by_date(date_str)
+    return {
+        "ok": True,
+        "deleted_entry_id": int(id),
+        "date": date_str,
+        "file": str(file_path),
+        "remaining_for_day": len(remaining),
+    }
+
+
+@router.post("/api/diary/entry/reanalyze")
+async def reanalyze_diary_entry(req: ReanalyzeDiaryRequest, request: Request, background_tasks: BackgroundTasks):
+    entry = get_entry(int(req.id))
+    if not entry:
+        raise HTTPException(status_code=404, detail={"code": "NOT_FOUND", "message": f"entry not found: {req.id}"})
+
+    provider = normalize_provider(req.preferred_provider or "deepseek")
+    queue_entry_analysis(
+        background_tasks,
+        base_dir=Path(getattr(request.app.state, "base_dir", Path(__file__).resolve().parent)),
+        entry_id=int(req.id),
+        preferred_provider=provider,
+        max_attempts=int(req.max_attempts or env_int("DIARY_ANALYZE_MAX_ATTEMPTS", 8)),
+        job_timeout_s=int(req.job_timeout_s or env_int("DIARY_ANALYZE_JOB_TIMEOUT_S", 180)),
+        force_reanalyze=bool(req.force_reanalyze),
+    )
+    detail = get_entry_detail_payload(int(req.id)) or {}
+    return {
+        "ok": True,
+        "entry_id": int(req.id),
+        "analysis_ok": bool(detail.get("analysis_ready")),
+        "analysis_status": str(detail.get("analysis_status") or "pending"),
+        "analysis_backend": analysis_primary_backend(),
+        "analysis_queued": True,
+        "entry_detail": detail,
+        "failure_reasons": detail.get("failure_reasons") or [],
+        "analysis_rounds": [],
+    }
+
+
 @router.post("/api/diary/audio/save")
 async def save_audio_diary(
     request: Request,
+    background_tasks: BackgroundTasks,
     audio: UploadFile = File(...),
     date: Optional[str] = Form(default=None),
     note: Optional[str] = Form(default=None),
 ):
-    date_str = date or local_today_str()
-    audio_folder = _audio_dir(request, date_str)
-
-    ext = _safe_audio_ext(audio.filename or "", audio.content_type or "")
-    stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
-    target_path = audio_folder / f"{stamp}_{uuid.uuid4().hex[:10]}{ext}"
-
-    total = 0
-    with open(target_path, "wb") as f:
-        while True:
-            chunk = await audio.read(1024 * 1024)
-            if not chunk:
-                break
-            total += len(chunk)
-            if total > MAX_AUDIO_UPLOAD_BYTES:
-                f.close()
-                target_path.unlink(missing_ok=True)
-                raise HTTPException(
-                    status_code=413,
-                    detail={
-                        "code": "AUDIO_TOO_LARGE",
-                        "message": f"audio file too large (> {MAX_AUDIO_UPLOAD_BYTES // (1024 * 1024)}MB)",
-                    },
-                )
-            f.write(chunk)
-    await audio.close()
-
-    if total <= 0:
-        target_path.unlink(missing_ok=True)
-        raise HTTPException(status_code=400, detail={"code": "EMPTY_AUDIO", "message": "empty audio upload"})
-
-    analysis = analyze_audio_file(target_path)
-    audio_entry_id = insert_audio_entry(
-        diary_date=date_str,
-        file_path=str(target_path),
-        source_format=str(analysis.get("source_ext") or ext),
-        duration_s=float(analysis.get("duration_s")) if isinstance(analysis.get("duration_s"), (int, float)) else None,
-        file_size_bytes=total,
-        note=(note or "").strip()[:500],
-        analysis_json=json.dumps(analysis, ensure_ascii=False),
-        created_at=utc_now_iso(),
+    ingest_entry = getattr(request.app.state, "ingest_entry", None)
+    InputError = getattr(request.app.state, "InputError", Exception)
+    return await save_audio_diary_payload(
+        request=request,
+        background_tasks=background_tasks,
+        audio=audio,
+        date_str=(date or local_today_str()),
+        note=note,
+        max_audio_upload_bytes=MAX_AUDIO_UPLOAD_BYTES,
+        ingest_entry=ingest_entry,
+        input_error_type=InputError,
     )
-
-    profile = build_voice_profile(list_recent_audio_analyses(limit=30))
-    analysis_error = str(analysis.get("error") or "").strip()
-    analysis_ok = (analysis_error == "")
-    return {
-        "ok": bool(analysis_ok),
-        "uploaded": True,
-        "analysis_ok": bool(analysis_ok),
-        "analysis_error": (analysis_error or None),
-        "audio_entry_id": int(audio_entry_id),
-        "date": date_str,
-        "file": str(target_path),
-        "size_bytes": total,
-        "analysis": analysis,
-        "voice_profile": profile,
-    }
 
 
 @router.get("/api/diary/audio/list")
@@ -214,116 +260,59 @@ async def list_audio_diaries(limit: int = Query(default=30, ge=1, le=365)):
 
 @router.get("/api/diary/audio/profile")
 async def get_audio_profile(limit: int = Query(default=30, ge=3, le=365)):
-    analyses = list_recent_audio_analyses(limit=limit)
-    profile = build_voice_profile(analyses)
-    return {"ok": True, "sampled": len(analyses), "profile": profile}
+    return get_audio_profile_payload(limit=int(limit))
 
 
-@router.post("/api/diary/cloud/sync_existing")
-async def sync_existing_diaries(req: SyncExistingRequest, request: Request):
-    diaries_dir = _diaries_dir(request)
-    limit = max(1, min(int(req.limit or 30), 365))
+@router.get("/api/diary/audio/detail")
+async def get_audio_detail(id: int = Query(..., ge=1)):
+    payload = get_audio_detail_payload(int(id))
+    if not payload:
+        raise HTTPException(status_code=404, detail={"code": "NOT_FOUND", "message": "audio entry not found"})
+    transcript_text = str(((payload.get("transcript") or {}).get("text") or ""))
+    transcript_profile = build_transcript_profile(transcript_text)
 
-    files = list(diaries_dir.glob("*.txt"))
-    files.sort(key=lambda p: p.stem, reverse=bool(req.newest_first))
-    files = files[:limit]
-
-    if not cloud_sync_enabled():
-        return {"ok": False, "msg": "cloud_sync_disabled", "count": 0, "items": []}
-
-    items = []
-    ok_count = 0
-    skipped_count = 0
-    for p in files:
-        res = sync_diary_file_to_cloud(str(p), source="api_sync_existing")
-        item = {
-            "date": p.stem,
-            "file": str(p),
-            "ok": bool(res.get("ok")),
-            "skipped": bool(res.get("skipped")),
-            "synced_bytes": res.get("synced_bytes"),
-            "total_bytes": res.get("total_bytes"),
-            "error": res.get("error"),
-        }
-        items.append(item)
-        if item["ok"]:
-            ok_count += 1
-        if item["skipped"]:
-            skipped_count += 1
-
-    return {"ok": True, "count": len(items), "ok_count": ok_count, "skipped_count": skipped_count, "items": items}
+    return {
+        "ok": True,
+        "audio_entry": payload.get("audio_entry"),
+        "content_link": payload.get("content_link"),
+        "transcript": payload.get("transcript"),
+        "cloud_profile": payload.get("cloud_profile"),
+        "transcript_profile": transcript_profile,
+    }
 
 
-@router.get("/api/diary/cloud/state")
-async def cloud_sync_state(limit: int = Query(default=100, ge=1, le=1000)):
-    conn = connect()
-    try:
-        rows = conn.execute(
-            """
-            SELECT file_path, synced_bytes, last_file_size, last_source, last_batch_id,
-                   last_status, last_error, updated_at
-            FROM cloud_sync_state
-            ORDER BY updated_at DESC
-            LIMIT ?
-            """,
-            (int(limit),),
-        ).fetchall()
-        return {"ok": True, "count": len(rows), "items": [dict(r) for r in rows]}
-    finally:
-        conn.close()
+@router.get("/api/diary/audio/file")
+async def get_audio_file(
+    request: Request,
+    id: int = Query(..., ge=1),
+    prefer: str = Query(default="raw"),
+):
+    return build_audio_file_response(
+        request=request,
+        audio_id=int(id),
+        prefer=prefer,
+    )
 
 
-def _run_analyze_latest_bg(
-    *,
-    base_dir: Path,
-    entry_limit: int,
-    job_limit: int,
-    preferred_provider: str,
-    min_block_chars: int,
-    max_attempts: int,
-    job_timeout_s: int,
-) -> None:
-    env = dict(os.environ)
-    env["MIN_BLOCK_CHARS"] = str(max(1, int(min_block_chars)))
-
-    py = sys.executable or "python3"
-    backfill_cmd = [
-        py,
-        str(base_dir / "scripts" / "backfill_blocks_jobs.py"),
-        "--limit",
-        str(max(1, int(entry_limit))),
-    ]
-    run_cmd = [
-        py,
-        str(base_dir / "scripts" / "run_block_jobs.py"),
-        "--backend",
-        "cloud",
-        "--preferred-provider",
-        str(preferred_provider or "deepseek"),
-        "--force",
-        "--retry-failed",
-        "--max-attempts",
-        str(max(1, int(max_attempts))),
-        "--limit",
-        str(max(1, int(job_limit))),
-        "--job-timeout-s",
-        str(max(10, int(job_timeout_s))),
-    ]
-
-    try:
-        b = subprocess.run(backfill_cmd, cwd=str(base_dir), env=env, capture_output=True, text=True, check=False)
-        logger.info(f"analyze_latest backfill rc={b.returncode} out={b.stdout.strip()} err={b.stderr.strip()}")
-        r = subprocess.run(run_cmd, cwd=str(base_dir), env=env, capture_output=True, text=True, check=False)
-        logger.info(f"analyze_latest run rc={r.returncode} out={r.stdout.strip()} err={r.stderr.strip()}")
-    except Exception as e:
-        logger.exception(f"analyze_latest background failed: {type(e).__name__}: {e}")
-
+@router.post("/api/diary/audio/reanalyze")
+async def reanalyze_audio_diary(req: ReanalyzeAudioRequest, request: Request, background_tasks: BackgroundTasks):
+    ingest_entry = getattr(request.app.state, "ingest_entry", None)
+    InputError = getattr(request.app.state, "InputError", Exception)
+    return await reanalyze_audio_diary_payload(
+        request=request,
+        background_tasks=background_tasks,
+        audio_id=int(req.id),
+        preferred_provider=req.preferred_provider,
+        force_reanalyze=bool(req.force_reanalyze),
+        ingest_entry=ingest_entry,
+        input_error_type=InputError,
+    )
 
 @router.post("/api/diary/analyze_latest")
 async def analyze_latest(req: AnalyzeLatestRequest, request: Request, background_tasks: BackgroundTasks):
     base_dir = Path(getattr(request.app.state, "base_dir", Path(__file__).resolve().parent))
     background_tasks.add_task(
-        _run_analyze_latest_bg,
+        run_analyze_latest_bg,
         base_dir=base_dir,
         entry_limit=req.entry_limit,
         job_limit=req.job_limit,
@@ -360,12 +349,11 @@ async def analyze_status():
 
 @router.post("/api/diary/save")
 async def save_diary(req: SaveDiaryRequest, request: Request, background_tasks: BackgroundTasks):
-    """保存日记：写 txt 备份 + 增量写 SQLite（不再在保存时运行 Phi/Qwen）"""
+    """保存日记：写 txt 备份 + 增量写 SQLite，并在后台触发分析。"""
     logger.info(f"保存日记: 长度={len(req.text)}")
 
     # 1) 先做 ingest，避免输入非法时先写入 txt 造成文件/数据库状态分裂
     date_str = req.date or local_today_str()
-    file_path = _safe_diary_path(_diaries_dir(request), date_str)
 
     # 2) 走 ingest：insert_entry -> split_to_blocks -> entry_blocks -> block_jobs（不跑模型）
     ingest_entry = getattr(request.app.state, "ingest_entry", None)
@@ -381,40 +369,59 @@ async def save_diary(req: SaveDiaryRequest, request: Request, background_tasks: 
         status = 413 if "too long" in msg.lower() else 400
         raise HTTPException(status_code=status, detail={"code": "INVALID_INPUT", "message": msg})
 
-    # 3) ingest 成功后再写 txt 备份
+    # 3) ingest 成功后再写 txt 备份；备份失败不影响主库成功写入
     ts = utc_now_iso()
-    new_text = (req.text or "").strip()
-    chunk = f"\n\n--- {ts} ---\n{new_text}\n"
-    with open(file_path, "a", encoding="utf-8") as f:
-        f.write(chunk)
+    file_path: Optional[Path] = None
+    backup_warning = ""
+    try:
+        file_path = append_daily_backup_entry(
+            request=request,
+            date_str=date_str,
+            created_at=ts,
+            text=req.text,
+        )
+    except Exception as e:
+        backup_warning = f"daily backup append failed: {type(e).__name__}: {e}"
+        logger.warning(backup_warning)
 
     entry_id = ingest_res.get("entry_id")
 
-    # Legacy bot only: CascadeBot does not maintain `entries`
-    bot = getattr(request.app.state, "bot", None)
-    if bot is not None and hasattr(bot, "entries"):
-        try:
-            bot.entries.append(
-                DiaryEntry(date=datetime.now(timezone.utc), text=req.text, path=str(file_path))  # type: ignore
-            )
-            bot.entries.sort(key=lambda e: e.date)  # type: ignore
-        except Exception:
-            # 如果 bot.entries 不是该结构，至少不要因为增量更新而影响保存
-            pass
-
-    if cloud_sync_enabled() and (req.text or "").strip():
-        background_tasks.add_task(sync_diary_file_to_cloud_bg, str(file_path), source="api_diary_save")
+    provider = normalize_provider(env_str("DIARY_SAVE_PREFERRED_PROVIDER") or env_str("CLOUD_DEFAULT_PROVIDER", "deepseek") or "deepseek")
+    max_attempts = env_int("DIARY_ANALYZE_MAX_ATTEMPTS", 8)
+    job_timeout_s = env_int("DIARY_ANALYZE_JOB_TIMEOUT_S", 180)
+    base_dir = Path(getattr(request.app.state, "base_dir", Path(__file__).resolve().parent))
+    queued_blocks = int(ingest_res.get("queued_blocks", 0) or 0)
+    analysis_queued = bool(entry_id) and queued_blocks > 0
+    if analysis_queued:
+        queue_entry_analysis(
+            background_tasks,
+            base_dir=base_dir,
+            entry_id=int(entry_id),
+            preferred_provider=provider,
+            max_attempts=max_attempts,
+            job_timeout_s=job_timeout_s,
+            force_reanalyze=False,
+        )
+    detail = get_entry_detail_payload(int(entry_id)) or {}
 
     return {
         "ok": True,
         "entry_id": entry_id,
-        "file": str(file_path),
+        "file": str(file_path) if file_path else "",
+        "backup_warning": backup_warning,
         # Step 1: blocks/jobs observability
-        "queued_blocks": int(ingest_res.get("queued_blocks", 0) or 0),
+        "queued_blocks": queued_blocks,
         "block_ids": ingest_res.get("block_ids") or [],
         "enqueue_ms": ingest_res.get("enqueue_ms"),
         # 可观测性：写入/抽取耗时与是否成功
-        "analysis_ok": bool(ingest_res.get("analysis_ok", False)),
+        "analysis_ok": bool(detail.get("analysis_ready")),
+        "analysis_status": str(detail.get("analysis_status") or ("pending" if analysis_queued else "idle")),
+        "analysis_backend": analysis_primary_backend(),
+        "analysis_queued": analysis_queued,
+        "analysis_result": detail.get("analysis") or {},
+        "entry_detail": detail,
+        "failure_reasons": detail.get("failure_reasons") or [],
+        "analysis_rounds": [],
         "prompt_version": ingest_res.get("prompt_version"),
         "model": ingest_res.get("model"),
         "insert_ms": ingest_res.get("insert_ms"),
@@ -427,7 +434,4 @@ async def save_diary(req: SaveDiaryRequest, request: Request, background_tasks: 
         "memory_changes": ingest_res.get("memory_changes"),
         "memory_error": ingest_res.get("memory_error"),
         "memory_card_ids": ingest_res.get("memory_card_ids"),
-        # Cloud sync observability
-        "cloud_sync_enabled": cloud_sync_enabled(),
-        "cloud_sync_queued": bool(cloud_sync_enabled() and (req.text or "").strip()),
     }
