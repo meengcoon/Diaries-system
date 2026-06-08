@@ -363,6 +363,10 @@ h3 {
   margin: 0.2em 0;
 }
 
+.chat-msg .msg-text {
+  white-space: pre-wrap;
+}
+
 .debug-panel {
   margin-top: 8px;
   border: 1px solid rgba(255, 255, 255, 0.86);

@@ -172,6 +172,7 @@ _configure_cors(app)
 
 
 # Routers
+from api.routes_audio import router as audio_router
 from api.routes_chat import router as chat_router
 from api.routes_diary import router as diary_router
 from api.routes_meta import router as meta_router
@@ -179,6 +180,7 @@ from api.routes_meta import router as meta_router
 app.include_router(meta_router)
 app.include_router(chat_router)
 app.include_router(diary_router)
+app.include_router(audio_router)
 
 
 # Static files (must be after API routers)

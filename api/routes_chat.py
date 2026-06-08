@@ -9,7 +9,7 @@ from typing import Any, Dict, List, Literal, Optional
 from fastapi import APIRouter, File, Form, HTTPException, Request, UploadFile
 from pydantic import BaseModel
 
-from core.settings import env_bool, env_float, env_str
+from core.settings import env_bool, env_float, env_int, env_str
 from pipeline.chat_memory import update_chat_memory
 from pipeline.local_stt import transcribe_audio_file_local
 from storage.repo_chat import (
@@ -25,6 +25,7 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter()
 _MODEL_UNAVAILABLE_REPLY = "模型暂时不可用，请稍后重试"
+MAX_VOICE_CHAT_UPLOAD_BYTES = env_int("DIARY_MAX_AUDIO_UPLOAD_MB", 25) * 1024 * 1024
 
 
 class ChatRequest(BaseModel):
@@ -189,6 +190,29 @@ def _transcribe_local_bytes(audio_bytes: bytes, filename: str) -> str:
             pass
 
 
+async def _read_upload_limited(audio: UploadFile, *, max_bytes: int) -> bytes:
+    chunks: list[bytes] = []
+    total = 0
+    try:
+        while True:
+            chunk = await audio.read(1024 * 1024)
+            if not chunk:
+                break
+            total += len(chunk)
+            if total > int(max_bytes):
+                raise HTTPException(
+                    status_code=413,
+                    detail={
+                        "code": "AUDIO_TOO_LARGE",
+                        "message": f"audio file too large (> {int(max_bytes) // (1024 * 1024)}MB)",
+                    },
+                )
+            chunks.append(chunk)
+        return b"".join(chunks)
+    finally:
+        await audio.close()
+
+
 @router.get("/api/chat/sessions", response_model=ChatSessionListResponse)
 async def chat_sessions(limit: int = 60):
     items = list_chat_sessions(limit=max(1, min(int(limit or 60), 200)))
@@ -275,8 +299,7 @@ async def voice_chat(
     if bot is None:
         raise HTTPException(status_code=503, detail={"message": "bot not initialized"})
 
-    raw = await audio.read()
-    await audio.close()
+    raw = await _read_upload_limited(audio, max_bytes=MAX_VOICE_CHAT_UPLOAD_BYTES)
     if not raw:
         raise HTTPException(status_code=400, detail={"message": "空音频"})
 

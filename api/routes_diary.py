@@ -2,14 +2,13 @@ from __future__ import annotations
 
 import logging
 from pathlib import Path
-from typing import Any, Dict, Optional
+from typing import Optional
 
-from fastapi import APIRouter, BackgroundTasks, File, Form, HTTPException, Query, Request, UploadFile
+from fastapi import APIRouter, HTTPException, Query, Request
 from pydantic import BaseModel
 
 from core.settings import env_int, env_str
 from storage.db_core import connect
-from storage.repo_audio import list_recent_audio_entries
 from storage.repo_entries import (
     delete_entry,
     get_entry,
@@ -20,28 +19,22 @@ from services.analysis_service import (
     analysis_primary_backend,
     normalize_provider,
     queue_entry_analysis,
-    run_analyze_latest_bg,
+    queue_latest_analysis,
 )
-from services.diary_service import (
+from services.diary_file_service import (
     append_daily_backup_entry,
     date_from_created_at,
     diaries_dir,
-    get_audio_detail_payload,
-    get_audio_profile_payload,
-    reanalyze_audio_diary_payload,
     rewrite_daily_backup_from_db,
-    save_audio_diary_payload,
     safe_diary_path,
 )
 from services.entry_ingest_service import replace_entry_content_atomic
 from services.entry_service import get_entry_detail_payload
-from services.media_service import build_audio_file_response, build_transcript_profile
 from utils.timeutil import utc_now_iso, local_today_str
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
-MAX_AUDIO_UPLOAD_BYTES = env_int("DIARY_MAX_AUDIO_UPLOAD_MB", 25) * 1024 * 1024
 
 
 class SaveDiaryRequest(BaseModel):
@@ -74,11 +67,6 @@ class AnalyzeLatestRequest(BaseModel):
     max_attempts: int = 8
     job_timeout_s: int = 180
 
-
-class ReanalyzeAudioRequest(BaseModel):
-    id: int
-    preferred_provider: str = "deepseek"
-    force_reanalyze: bool = False
 
 @router.get("/api/diary/list")
 async def list_diaries(request: Request, limit: int = Query(default=30, ge=1, le=365)):
@@ -128,7 +116,7 @@ async def read_diary_entry(id: int = Query(..., ge=1)):
 
 
 @router.put("/api/diary/entry")
-async def update_diary_entry(req: UpdateDiaryRequest, request: Request, background_tasks: BackgroundTasks):
+async def update_diary_entry(req: UpdateDiaryRequest, request: Request):
     entry = get_entry(int(req.id))
     if not entry:
         raise HTTPException(status_code=404, detail={"code": "NOT_FOUND", "message": f"entry not found: {req.id}"})
@@ -157,7 +145,6 @@ async def update_diary_entry(req: UpdateDiaryRequest, request: Request, backgrou
     max_attempts = env_int("DIARY_ANALYZE_MAX_ATTEMPTS", 8)
     job_timeout_s = env_int("DIARY_ANALYZE_JOB_TIMEOUT_S", 180)
     queue_entry_analysis(
-        background_tasks,
         base_dir=Path(getattr(request.app.state, "base_dir", Path(__file__).resolve().parent)),
         entry_id=int(req.id),
         preferred_provider=provider,
@@ -201,14 +188,13 @@ async def delete_diary_entry(request: Request, id: int = Query(..., ge=1)):
 
 
 @router.post("/api/diary/entry/reanalyze")
-async def reanalyze_diary_entry(req: ReanalyzeDiaryRequest, request: Request, background_tasks: BackgroundTasks):
+async def reanalyze_diary_entry(req: ReanalyzeDiaryRequest, request: Request):
     entry = get_entry(int(req.id))
     if not entry:
         raise HTTPException(status_code=404, detail={"code": "NOT_FOUND", "message": f"entry not found: {req.id}"})
 
     provider = normalize_provider(req.preferred_provider or "deepseek")
     queue_entry_analysis(
-        background_tasks,
         base_dir=Path(getattr(request.app.state, "base_dir", Path(__file__).resolve().parent)),
         entry_id=int(req.id),
         preferred_provider=provider,
@@ -230,89 +216,10 @@ async def reanalyze_diary_entry(req: ReanalyzeDiaryRequest, request: Request, ba
     }
 
 
-@router.post("/api/diary/audio/save")
-async def save_audio_diary(
-    request: Request,
-    background_tasks: BackgroundTasks,
-    audio: UploadFile = File(...),
-    date: Optional[str] = Form(default=None),
-    note: Optional[str] = Form(default=None),
-):
-    ingest_entry = getattr(request.app.state, "ingest_entry", None)
-    InputError = getattr(request.app.state, "InputError", Exception)
-    return await save_audio_diary_payload(
-        request=request,
-        background_tasks=background_tasks,
-        audio=audio,
-        date_str=(date or local_today_str()),
-        note=note,
-        max_audio_upload_bytes=MAX_AUDIO_UPLOAD_BYTES,
-        ingest_entry=ingest_entry,
-        input_error_type=InputError,
-    )
-
-
-@router.get("/api/diary/audio/list")
-async def list_audio_diaries(limit: int = Query(default=30, ge=1, le=365)):
-    items = list_recent_audio_entries(limit=limit)
-    return {"ok": True, "count": len(items), "items": items}
-
-
-@router.get("/api/diary/audio/profile")
-async def get_audio_profile(limit: int = Query(default=30, ge=3, le=365)):
-    return get_audio_profile_payload(limit=int(limit))
-
-
-@router.get("/api/diary/audio/detail")
-async def get_audio_detail(id: int = Query(..., ge=1)):
-    payload = get_audio_detail_payload(int(id))
-    if not payload:
-        raise HTTPException(status_code=404, detail={"code": "NOT_FOUND", "message": "audio entry not found"})
-    transcript_text = str(((payload.get("transcript") or {}).get("text") or ""))
-    transcript_profile = build_transcript_profile(transcript_text)
-
-    return {
-        "ok": True,
-        "audio_entry": payload.get("audio_entry"),
-        "content_link": payload.get("content_link"),
-        "transcript": payload.get("transcript"),
-        "cloud_profile": payload.get("cloud_profile"),
-        "transcript_profile": transcript_profile,
-    }
-
-
-@router.get("/api/diary/audio/file")
-async def get_audio_file(
-    request: Request,
-    id: int = Query(..., ge=1),
-    prefer: str = Query(default="raw"),
-):
-    return build_audio_file_response(
-        request=request,
-        audio_id=int(id),
-        prefer=prefer,
-    )
-
-
-@router.post("/api/diary/audio/reanalyze")
-async def reanalyze_audio_diary(req: ReanalyzeAudioRequest, request: Request, background_tasks: BackgroundTasks):
-    ingest_entry = getattr(request.app.state, "ingest_entry", None)
-    InputError = getattr(request.app.state, "InputError", Exception)
-    return await reanalyze_audio_diary_payload(
-        request=request,
-        background_tasks=background_tasks,
-        audio_id=int(req.id),
-        preferred_provider=req.preferred_provider,
-        force_reanalyze=bool(req.force_reanalyze),
-        ingest_entry=ingest_entry,
-        input_error_type=InputError,
-    )
-
 @router.post("/api/diary/analyze_latest")
-async def analyze_latest(req: AnalyzeLatestRequest, request: Request, background_tasks: BackgroundTasks):
+async def analyze_latest(req: AnalyzeLatestRequest, request: Request):
     base_dir = Path(getattr(request.app.state, "base_dir", Path(__file__).resolve().parent))
-    background_tasks.add_task(
-        run_analyze_latest_bg,
+    queued = queue_latest_analysis(
         base_dir=base_dir,
         entry_limit=req.entry_limit,
         job_limit=req.job_limit,
@@ -323,7 +230,7 @@ async def analyze_latest(req: AnalyzeLatestRequest, request: Request, background
     )
     return {
         "ok": True,
-        "queued": True,
+        "queued": bool(queued.get("queued", False)),
         "entry_limit": int(req.entry_limit),
         "job_limit": int(req.job_limit),
         "preferred_provider": req.preferred_provider,
@@ -348,7 +255,7 @@ async def analyze_status():
 
 
 @router.post("/api/diary/save")
-async def save_diary(req: SaveDiaryRequest, request: Request, background_tasks: BackgroundTasks):
+async def save_diary(req: SaveDiaryRequest, request: Request):
     """保存日记：写 txt 备份 + 增量写 SQLite，并在后台触发分析。"""
     logger.info(f"保存日记: 长度={len(req.text)}")
 
@@ -394,7 +301,6 @@ async def save_diary(req: SaveDiaryRequest, request: Request, background_tasks: 
     analysis_queued = bool(entry_id) and queued_blocks > 0
     if analysis_queued:
         queue_entry_analysis(
-            background_tasks,
             base_dir=base_dir,
             entry_id=int(entry_id),
             preferred_provider=provider,

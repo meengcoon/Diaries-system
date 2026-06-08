@@ -285,11 +285,10 @@ function createUserMessageNode(text, kind = "chat") {
 function createAiMessageNode(text) {
   const node = document.createElement("div");
   node.className = "chat-msg ai";
-  try {
-    node.innerHTML = marked.parse(text || "");
-  } catch (_err) {
-    node.textContent = text || "";
-  }
+  const body = document.createElement("div");
+  body.className = "msg-text";
+  body.textContent = text || "";
+  node.appendChild(body);
   return node;
 }
 
