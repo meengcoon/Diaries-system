@@ -265,6 +265,56 @@ def _repair_json_common_issues(s: str) -> str:
     return repaired
 
 
+def _repair_json_missing_commas(s: str) -> str:
+    text = str(s or "")
+    if not text:
+        return text
+
+    out: List[str] = []
+    in_string = False
+    escape = False
+    prev_sig = ""
+
+    def _starts_value(ch: str) -> bool:
+        return ch == '"' or ch == "{" or ch == "[" or ch in "-0123456789tfn"
+
+    def _ends_value(ch: str) -> bool:
+        return ch == '"' or ch == "}" or ch == "]" or ch in "0123456789eln"
+
+    for ch in text:
+        if in_string:
+            out.append(ch)
+            if escape:
+                escape = False
+            elif ch == "\\":
+                escape = True
+            elif ch == '"':
+                in_string = False
+                prev_sig = '"'
+            continue
+
+        if ch == '"':
+            if prev_sig and _ends_value(prev_sig):
+                out.append(",")
+                prev_sig = ","
+            out.append(ch)
+            in_string = True
+            continue
+
+        if ch.isspace():
+            out.append(ch)
+            continue
+
+        if _starts_value(ch) and prev_sig and _ends_value(prev_sig):
+            out.append(",")
+            prev_sig = ","
+
+        out.append(ch)
+        prev_sig = ch
+
+    return "".join(out)
+
+
 def _try_repair_json_lines(s: str) -> str:
     s = s.replace("\r\n", "\n")
     cleaned: List[str] = []
@@ -680,6 +730,7 @@ def _build_normalize_messages(*, title: str | None, raw_text: str, evidence_obj:
         "You are a strict JSON normalization engine. "
         "Return ONE single JSON object ONLY. No markdown, no code fences, no commentary. "
         "Output must be valid JSON and must keep keys exactly as in TEMPLATE. "
+        "Return compact single-line JSON only. Every member and array item must be separated by a comma. "
         "No extra keys. facts/todos/topics/evidence_spans/psychological_themes/tensions/needs/patterns/memory_candidates are arrays of strings. "
         "signal scores are int 0-10 or null. reflection_depth is int 0-3 or null. "
         "summary_1_3 is a compact factual overview grounded in the evidence. "
@@ -727,17 +778,20 @@ def _build_normalize_messages(*, title: str | None, raw_text: str, evidence_obj:
     return [{"role": "system", "content": sys}, {"role": "user", "content": user}]
 
 
-def _build_fix_messages(*, raw_text: str, bad_output: str, template_obj: Dict[str, Any], stage_name: str) -> List[Dict[str, str]]:
+def _build_fix_messages(*, raw_text: str, bad_output: str, template_obj: Dict[str, Any], stage_name: str, parse_error: str | None = None) -> List[Dict[str, str]]:
     sys = (
         "You are a JSON repair engine. Rewrite into ONE valid JSON object ONLY. "
         "No markdown, no commentary, no extra keys. Keep the required keys and types. "
+        "Return compact single-line JSON only. Every member and array item must be separated by a comma. "
         "If the source diary was mainly Chinese, all non-evidence text fields must stay in Chinese and you must not output English translations. "
         "Preserve the intended stage and fill the template faithfully."
     )
     user = (
         f"STAGE: {stage_name}\n"
         f"TEMPLATE: {json.dumps(template_obj, ensure_ascii=False)}\n\n"
-        "SOURCE DIARY BLOCK:\n" + (raw_text or "") + "\n\nBAD OUTPUT:\n" + (bad_output or "")
+        + (f"PARSE ERROR:\n{parse_error}\n\n" if parse_error else "")
+        + "SOURCE DIARY BLOCK:\n" + (raw_text or "")
+        + "\n\nBAD OUTPUT:\n" + (bad_output or "")
     )
     return [{"role": "system", "content": sys}, {"role": "user", "content": user}]
 
@@ -751,11 +805,15 @@ def _parse_or_raise(raw: str) -> Dict[str, Any]:
         try:
             obj = json.loads(repaired)
         except Exception as e:
-            repaired_lines = _try_repair_json_lines(repaired)
+            repaired_commas = _repair_json_missing_commas(repaired)
             try:
-                obj = json.loads(repaired_lines)
-            except Exception as e2:
-                raise AnalysisValidationError(f"non-JSON output: {e2}") from e2
+                obj = json.loads(repaired_commas)
+            except Exception:
+                repaired_lines = _try_repair_json_lines(repaired_commas)
+                try:
+                    obj = json.loads(repaired_lines)
+                except Exception as e2:
+                    raise AnalysisValidationError(f"non-JSON output: {e2}") from e2
 
     if not isinstance(obj, dict):
         raise AnalysisValidationError("top-level must be an object")
@@ -876,6 +934,7 @@ async def _run_json_stage(
                         bad_output=last_output,
                         template_obj=template_obj,
                         stage_name=stage_name,
+                        parse_error=f"{type(first_err).__name__}: {first_err}",
                     )
                     res2 = await stage_caller(f"{stage_name}_repair", fix_messages, {"type": "json_object"}, max_tokens)
                     parsed2 = parser(res2.output)

@@ -31,7 +31,7 @@ Acceptance:
 
 ## TEST-001 - Commit Core E2E and Extreme Input Regression Tests
 
-Status: READY
+Status: DONE
 
 Goal:
 
@@ -792,6 +792,55 @@ Validation:
 ```bash
 git status --short
 rg -n "REPO-005|REPO-006|Commit REPO-005 task bookkeeping" docs/TASKS.md
+git diff --cached --name-only
+git diff --cached --check
+```
+
+## ANALYSIS-JSON-001 - Validate JSON Repair Hardening
+
+Status: DONE
+
+Goal:
+
+Validate and commit the existing JSON repair hardening for malformed model output that is missing commas between JSON members or values.
+
+Problem:
+
+The current dirty worktree includes a focused change in `block_analyze.py` that repairs missing commas and adds a regression test in `tests/test_block_analyze_json.py`. This should be validated and committed separately from queue, worker, rollup, Ollama, desktop, Health, and Quick Capture work.
+
+Allowed files:
+
+- `block_analyze.py`
+- `tests/test_block_analyze_json.py`
+- `docs/TASKS.md` only if marking this task DONE after commit
+
+Scope:
+
+- Inspect the existing changes in `block_analyze.py` and `tests/test_block_analyze_json.py`.
+- Validate that the JSON repair behavior is coherent and covered by the focused test.
+- Do not expand the implementation beyond JSON repair hardening.
+- Do not touch API, service, storage, worker, Ollama, desktop, `.gitignore`, or unrelated test files.
+- Do not start BUG-002, HEALTH-001, DOCS-008, Quick Capture, queue, worker, rollup, Ollama, or desktop tasks.
+- Stage and commit only files in the allowed list.
+
+Acceptance:
+
+- Missing-comma JSON repair is covered by `tests/test_block_analyze_json.py`.
+- Focused validation passes.
+- Workflow-required validation passes.
+- Cached diff contains only allowed files.
+- No unrelated dirty or untracked files are staged or committed.
+- Commit message subject is:
+  `fix: harden JSON repair for missing commas`
+
+Validation:
+
+```bash
+git status --short
+git diff -- block_analyze.py tests/test_block_analyze_json.py
+.venv/bin/python -m pytest -q tests/test_block_analyze_json.py
+.venv/bin/python -m pytest -q
+.venv/bin/python -m compileall -q api services pipeline storage bot llm workers scripts server.py block_analyze.py desktop_app.py
 git diff --cached --name-only
 git diff --cached --check
 ```
