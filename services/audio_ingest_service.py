@@ -9,7 +9,7 @@ from pathlib import Path
 from typing import Any, Dict, Optional
 
 from core.settings import env_int, env_str
-from fastapi import BackgroundTasks, HTTPException, Request, UploadFile
+from fastapi import HTTPException, Request, UploadFile
 
 from pipeline.audio_features import analyze_audio_file
 from pipeline.local_stt import transcribe_audio_file_local
@@ -42,7 +42,6 @@ def build_audio_content_text(*, note: str, transcript: str) -> str:
 async def save_audio_diary_payload(
     *,
     request: Request,
-    background_tasks: BackgroundTasks,
     audio: UploadFile,
     date_str: str,
     note: Optional[str],
@@ -128,7 +127,6 @@ async def save_audio_diary_payload(
                 )
                 content_analysis["provider"] = provider
                 queue_entry_analysis(
-                    background_tasks,
                     base_dir=base_dir,
                     entry_id=int(content_analysis["entry_id"]),
                     preferred_provider=provider,
@@ -181,7 +179,6 @@ async def save_audio_diary_payload(
 async def reanalyze_audio_diary_payload(
     *,
     request: Request,
-    background_tasks: BackgroundTasks,
     audio_id: int,
     preferred_provider: str,
     force_reanalyze: bool,
@@ -247,7 +244,6 @@ async def reanalyze_audio_diary_payload(
     if entry_id > 0 and queued_blocks > 0:
         base_dir = Path(getattr(request.app.state, "base_dir", Path(__file__).resolve().parent))
         queue_entry_analysis(
-            background_tasks,
             base_dir=base_dir,
             entry_id=entry_id,
             preferred_provider=provider,

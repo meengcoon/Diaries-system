@@ -897,7 +897,7 @@ rg -n "ANALYSIS-QUEUE-001|WORKER-LEASE-001|ROLLUP-001|OLLAMA-001|DESKTOP-001|REP
 
 ## ANALYSIS-QUEUE-001 - Validate enqueue-only analysis API path
 
-Status: READY
+Status: DONE
 
 Goal:
 

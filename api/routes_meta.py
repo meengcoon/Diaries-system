@@ -4,7 +4,7 @@ from collections import Counter
 
 from fastapi import APIRouter, Query, Request
 
-from storage.db import list_recent_entry_summaries
+from storage.repo_entries import list_recent_entry_summaries
 from storage.db_core import connect
 
 router = APIRouter()

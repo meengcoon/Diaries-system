@@ -1,24 +1,13 @@
 from __future__ import annotations
 
 from pathlib import Path
-
-from fastapi import BackgroundTasks
+from typing import Any, Dict
 
 from .analysis_config import analysis_primary_backend, normalize_provider
-from .analysis_jobs import prioritize_entry_jobs
-from .analysis_runner import (
-    BLOCK_ANALYZE_PROC_LOCK as _BLOCK_ANALYZE_PROC_LOCK,
-    detail_should_fallback_to_local,
-    log_subprocess_result,
-    run_analyze_entry_bg,
-    run_analyze_latest_bg,
-    run_python_cli,
-    should_fallback_to_local,
-)
+from .analysis_runner import enqueue_entry_analysis, enqueue_latest_analysis
 
 
 def queue_entry_analysis(
-    background_tasks: BackgroundTasks,
     *,
     base_dir: Path,
     entry_id: int,
@@ -26,13 +15,33 @@ def queue_entry_analysis(
     max_attempts: int,
     job_timeout_s: int,
     force_reanalyze: bool,
-) -> None:
-    background_tasks.add_task(
-        run_analyze_entry_bg,
+) -> Dict[str, Any]:
+    return enqueue_entry_analysis(
         base_dir=base_dir,
         entry_id=int(entry_id),
         preferred_provider=normalize_provider(preferred_provider),
         max_attempts=max(1, int(max_attempts)),
         job_timeout_s=max(10, int(job_timeout_s)),
         force_reanalyze=bool(force_reanalyze),
+    )
+
+
+def queue_latest_analysis(
+    *,
+    base_dir: Path,
+    entry_limit: int,
+    job_limit: int,
+    preferred_provider: str,
+    min_block_chars: int,
+    max_attempts: int,
+    job_timeout_s: int,
+) -> Dict[str, Any]:
+    return enqueue_latest_analysis(
+        base_dir=base_dir,
+        entry_limit=max(1, int(entry_limit)),
+        job_limit=max(1, int(job_limit)),
+        preferred_provider=normalize_provider(preferred_provider),
+        min_block_chars=max(1, int(min_block_chars)),
+        max_attempts=max(1, int(max_attempts)),
+        job_timeout_s=max(10, int(job_timeout_s)),
     )
