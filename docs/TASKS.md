@@ -944,7 +944,7 @@ git diff --cached --check
 
 ## WORKER-LEASE-001 - Validate worker lease and retry behavior
 
-Status: READY
+Status: DONE
 
 Goal:
 

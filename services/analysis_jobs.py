@@ -12,7 +12,12 @@ def prioritize_entry_jobs(entry_id: int, *, force_reanalyze: bool, max_attempts:
             conn.execute(
                 """
                 UPDATE block_jobs
-                SET status='pending', attempts=0, last_error=NULL, updated_at=?
+                SET status='pending',
+                    attempts=0,
+                    last_error=NULL,
+                    leased_by=NULL,
+                    leased_until=NULL,
+                    updated_at=?
                 WHERE block_id IN (SELECT block_id FROM entry_blocks WHERE entry_id=?)
                 """,
                 (ancient, int(entry_id)),
@@ -31,6 +36,8 @@ def prioritize_entry_jobs(entry_id: int, *, force_reanalyze: bool, max_attempts:
                 SET status='pending',
                     attempts=CASE WHEN attempts>=? THEN 0 ELSE attempts END,
                     last_error=NULL,
+                    leased_by=NULL,
+                    leased_until=NULL,
                     updated_at=?
                 WHERE block_id IN (SELECT block_id FROM entry_blocks WHERE entry_id=?)
                   AND status IN ('pending', 'failed', 'running')

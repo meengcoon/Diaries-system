@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime, timedelta
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, Iterable, List, Optional
 
 from .db_core import connect, _conn_ro, _conn_txn, _parse_iso_utc, _utc_now_dt, _utc_now_iso, compute_sha256
 
@@ -355,12 +355,14 @@ def claim_next_block_job(
     max_attempts: int = 3,
     lease_seconds: int = 1800,
     lease_owner: Optional[str] = None,
+    exclude_job_ids: Optional[Iterable[int]] = None,
 ) -> Optional[Dict[str, Any]]:
     """Atomically claim ONE job and return its full payload (job + block fields).
 
     - Claims from status='pending' (and optionally 'failed' when retry_failed=True)
     - Enforces attempts < max_attempts
     - Sets status='running', increments attempts, updates updated_at
+    - Optionally skips job_ids that were already seen in the current worker run
 
     Returns None if no eligible job exists.
     """
@@ -369,6 +371,7 @@ def claim_next_block_job(
     lease_seconds = max(1, int(lease_seconds))
     lease_owner = str(lease_owner or "analysis_worker")
     lease_until = (_utc_now_dt() + timedelta(seconds=lease_seconds)).isoformat(timespec="seconds")
+    exclude_ids = [int(x) for x in (exclude_job_ids or [])]
 
     # Use a dedicated connection so we can explicitly start BEGIN IMMEDIATE.
     conn = connect()
@@ -380,6 +383,11 @@ def claim_next_block_job(
             statuses.append("failed")
 
         placeholders = ",".join(["?"] * len(statuses))
+        exclude_sql = ""
+        params: List[Any] = [*statuses, max_attempts]
+        if exclude_ids:
+            exclude_sql = f" AND j.job_id NOT IN ({','.join(['?'] * len(exclude_ids))})"
+            params.extend(exclude_ids)
         row = conn.execute(
             f"""
             SELECT j.job_id, j.block_id, j.status, j.attempts
@@ -389,10 +397,11 @@ def claim_next_block_job(
             WHERE j.status IN ({placeholders})
               AND j.entry_version = e.version
               AND attempts < ?
+              {exclude_sql}
             ORDER BY updated_at ASC, job_id ASC
             LIMIT 1
             """,
-            (*statuses, max_attempts),
+            params,
         ).fetchone()
 
         if not row:

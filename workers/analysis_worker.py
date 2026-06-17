@@ -15,6 +15,7 @@ from storage import db as db
 from block_analyze import (
     BlockAnalyzeResult,
     BlockInputError,
+    AnalysisValidationError,
     MAX_BLOCK_CHARS,
     MIN_BLOCK_CHARS,
     PHI_MODEL,
@@ -203,13 +204,14 @@ async def run_once(
                 max_attempts=int(max_attempts),
                 lease_seconds=max(lease_seconds, 30),
                 lease_owner=lease_owner,
+                exclude_job_ids=seen_job_ids,
             )
             if not job:
                 break
 
             job_id = int(job["job_id"])
             if job_id in seen_job_ids:
-                db.mark_block_job_failed(job_id, last_error="deferred_same_run")
+                db.mark_block_job_failed(job_id, last_error=str(job.get("last_error") or "repeat_claim_same_run"))
                 repeat_claims += 1
                 break
             seen_job_ids.add(job_id)
@@ -228,6 +230,16 @@ async def run_once(
                 skipped += 1
                 continue
 
+            latest_stage_errors: dict[str, str] = {}
+
+            def _top_level_error_from_exception(err: Exception) -> str:
+                if isinstance(err, AnalysisValidationError):
+                    for stage_name in ("normalize_repair", "normalize"):
+                        detail = str(latest_stage_errors.get(stage_name) or "").strip()
+                        if detail:
+                            return detail
+                return f"{type(err).__name__}: {err!r}"
+
             def _record_stage(
                 *,
                 stage: str,
@@ -240,6 +252,8 @@ async def run_once(
                 model: str | None,
                 backend_override: str | None = None,
             ) -> None:
+                if status == "failed" and error:
+                    latest_stage_errors[str(stage)] = str(error)
                 provider = None
                 if model and ":" in model:
                     provider = model.split(":", 1)[0]
@@ -345,7 +359,7 @@ async def run_once(
                 await _rollup_and_maybe_update_memory(entry_id, expected_entry_version=entry_version or None)
 
             except Exception as e:
-                err = f"{type(e).__name__}: {e!r}"
+                err = _top_level_error_from_exception(e)
                 db.upsert_block_analysis(
                     block_id=block_id,
                     analysis_json="{}",
