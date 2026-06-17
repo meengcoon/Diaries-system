@@ -629,6 +629,59 @@ git diff --cached --name-only
 git diff --cached --check
 ```
 
+## REPO-004 - Resolve environment operations docs
+
+Status: DONE
+
+Goal:
+
+Resolve and commit the remaining environment documentation changes from BUG-001 without mixing them with application code or unrelated dirty files.
+
+Problem:
+
+`README.md` is modified with `.venv` setup and runtime/queue notes. It references `docs/operations.md`, but `docs/operations.md` is currently untracked and still contains stale `.venv1` commands. Before code tasks resume, environment docs should be made internally consistent and committed separately.
+
+Allowed files:
+
+- `README.md`
+- `docs/operations.md`
+- `docs/TASKS.md`
+
+Scope:
+
+- Inspect the `README.md` diff and `docs/operations.md` content.
+- Decide whether `docs/operations.md` should be committed as the runtime operations document.
+- If keeping `docs/operations.md`, update stale `.venv1` references to `.venv` and make it consistent with `README.md`.
+- If not keeping `docs/operations.md`, remove or adjust `README.md` references to it.
+- Do not modify application code.
+- Do not modify tests.
+- Do not modify `AGENTS.md`.
+- Do not modify `docs/PROJECT_STATE.md`.
+- Do not modify `docs/WORKFLOW.md`.
+- Do not stage unrelated dirty or untracked files.
+
+Acceptance:
+
+- `README.md` no longer references a stale or untracked operations document.
+- `docs/operations.md` is either:
+  - updated to `.venv` and committed with `README.md`, or
+  - intentionally left untracked and `README.md` no longer depends on it.
+- No `.venv1` commands remain in committed environment docs.
+- Cached diff contains only `README.md`, `docs/operations.md` if included, and `docs/TASKS.md` only if marking REPO-004 DONE.
+- Validation passes.
+- Commit message subject is:
+  `docs: document virtualenv operations`
+
+Validation:
+
+```bash
+git status --short
+rg -n "\.venv1|\.venv|operations.md|queue|worker" README.md docs/operations.md || true
+git diff -- README.md docs/TASKS.md
+git diff --cached --name-only
+git diff --cached --check
+```
+
 ## HEALTH-001 - Core Health / Diagnostics API
 
 Status: TODO

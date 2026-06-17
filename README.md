@@ -32,17 +32,37 @@
 
 ## 运行
 
+推荐开发环境是 `.venv`：
+
 ```bash
 python3 -m venv .venv
-source .venv/bin/activate
-pip install -r requirements.txt
-python3 server.py
+.venv/bin/python -m pip install -r requirements.txt -r requirements-dev.txt
+.venv/bin/python -m pip --version
+.venv/bin/python -m pytest -q
 ```
 
-另开一个终端运行分析 worker：
+旧的本地虚拟环境已不再作为推荐环境。
 
 ```bash
-python3 scripts/run_block_jobs.py --force --limit 20 --backend cloud --preferred-provider deepseek
+.venv/bin/python -m uvicorn server:app --host 127.0.0.1 --port 8000
+```
+
+另开一个终端运行分析 worker。当前固定的开发启动方式是：
+
+```bash
+.venv/bin/python scripts/run_block_jobs.py \
+  --backend cloud \
+  --preferred-provider deepseek \
+  --retry-failed \
+  --force \
+  --loop \
+  --poll-seconds 5
+```
+
+如果你只想看队列状态：
+
+```bash
+.venv/bin/python scripts/run_block_jobs.py --stats
 ```
 
 ## 核心 API
@@ -62,5 +82,18 @@ python3 scripts/run_block_jobs.py --force --limit 20 --backend cloud --preferred
 
 - 语音对话仍保留 STT -> Chat，但不再返回 TTS 音频
 - 仪表盘只返回最小概览，不再输出复杂画像卡片
-- 分析链路默认云优先，云失败后才回退本地
+- 分析链路默认云优先，但 API 现在只负责入队；需要有独立 worker 在跑
 - 仓库里可能仍有旧表结构和旧模块痕迹，后续会继续清理
+
+## 最小排查
+
+- 服务起不来先看端口占用：
+  `lsof -nP -iTCP:8000 -sTCP:LISTEN`
+- worker 不消费先看是否忘了 `--force`，或当前机器不 idle
+- 新请求一直停在 `pending`，通常是 worker 没启动
+- 先查：
+  `GET /api/diary/analyze_status`
+  和
+  `.venv/bin/python scripts/run_block_jobs.py --stats`
+
+更完整的运行和故障说明见 [docs/operations.md](/Users/lincma/Documents/diary%20system/docs/operations.md)。
