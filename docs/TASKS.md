@@ -845,6 +845,334 @@ git diff --cached --name-only
 git diff --cached --check
 ```
 
+## REPO-007 - Register Remaining REPO-005 Follow-Up Tasks
+
+Status: DONE
+
+Goal:
+
+Register the remaining follow-up tasks identified by the completed REPO-005 dirty-change audit so future runs do not need one registration round per task.
+
+Problem:
+
+REPO-005 identified several coherent dirty-worktree buckets after ANALYSIS-JSON-001 was completed by `e4d6b82 fix: harden JSON repair for missing commas`. The remaining buckets need explicit task entries before any source, test, queue, worker, rollup, Ollama, desktop, repo-cleanup, BUG-002, HEALTH-001, DOCS-008, or Quick Capture work begins.
+
+Allowed files:
+
+- `docs/TASKS.md`
+
+Scope:
+
+- Add only missing task entries for:
+  - `ANALYSIS-QUEUE-001 - Validate enqueue-only analysis API path`
+  - `WORKER-LEASE-001 - Validate worker lease and retry behavior`
+  - `ROLLUP-001 - Validate entry version, rollup, and memory idempotency`
+  - `OLLAMA-001 - Decide Ollama autostart behavior`
+  - `DESKTOP-001 - Decide whether desktop_app.py belongs in this baseline`
+  - `REPO-008 - Decide .omx ignore policy`
+- Do not register `ANALYSIS-JSON-001`; it is already DONE.
+- Do not modify application code.
+- Do not modify tests.
+- Do not modify untracked files.
+- Do not modify `.gitignore`.
+- Do not start implementation, cleanup, BUG-002, HEALTH-001, DOCS-008, Quick Capture, queue, worker, rollup, Ollama, desktop, or repo-cleanup tasks.
+- Do not stage or commit unless explicitly requested by the prompt executing this task.
+
+Acceptance:
+
+- All six remaining REPO-005 follow-up task IDs are present exactly once.
+- `ANALYSIS-JSON-001` remains DONE and is not duplicated.
+- No files outside `docs/TASKS.md` are changed by this task.
+- No source, test, untracked, desktop, Ollama, storage, service, worker, API, or `.gitignore` files are touched.
+- Nothing is staged or committed unless the executing prompt explicitly requires a docs-only commit.
+
+Validation:
+
+```bash
+git diff --check
+git diff --cached --name-only
+git diff --cached --check
+rg -n "ANALYSIS-QUEUE-001|WORKER-LEASE-001|ROLLUP-001|OLLAMA-001|DESKTOP-001|REPO-008|ANALYSIS-JSON-001" docs/TASKS.md
+```
+
+## ANALYSIS-QUEUE-001 - Validate enqueue-only analysis API path
+
+Status: READY
+
+Goal:
+
+Validate and commit the existing enqueue-only analysis API path without mixing it with worker, rollup, Ollama, desktop, repo-cleanup, Health, or Quick Capture work.
+
+Problem:
+
+REPO-005 identified dirty analysis API and service changes that appear to move analysis work onto the job queue instead of running it synchronously. This path must be validated as its own coherent task before broader feature work resumes.
+
+Allowed files:
+
+- `api/routes_meta.py`
+- `services/analysis_jobs.py`
+- `services/analysis_service.py`
+- `tests/test_api_enqueue_behavior.py`
+- `docs/TASKS.md` only if marking this task DONE after commit
+
+Scope:
+
+- Inspect the existing dirty changes for the enqueue-only API path.
+- Preserve the backend API contract unless the task evidence proves a narrow correction is required.
+- Do not touch worker lease, rollup, memory, Ollama, desktop, `.gitignore`, audio ingest, Health, Quick Capture, or unrelated tests.
+- Stage and commit only files in the allowed list if the validation succeeds.
+
+Acceptance:
+
+- The API path enqueues analysis work instead of running model analysis synchronously.
+- Regression coverage proves the enqueue behavior.
+- Workflow-required validation passes.
+- Cached diff contains only allowed files.
+- No unrelated dirty or untracked files are staged or committed.
+
+Validation:
+
+```bash
+git status --short
+git diff -- api/routes_meta.py services/analysis_jobs.py services/analysis_service.py tests/test_api_enqueue_behavior.py
+.venv/bin/python -m pytest -q tests/test_api_enqueue_behavior.py
+.venv/bin/python -m pytest -q
+.venv/bin/python -m compileall -q api services pipeline storage bot llm workers scripts server.py block_analyze.py desktop_app.py
+git diff --cached --name-only
+git diff --cached --check
+```
+
+## WORKER-LEASE-001 - Validate worker lease and retry behavior
+
+Status: READY
+
+Goal:
+
+Validate and commit the existing worker lease, retry, and failure-handling changes without mixing them with API enqueue, rollup, Ollama, desktop, repo-cleanup, Health, or Quick Capture work.
+
+Problem:
+
+REPO-005 identified dirty queue and worker changes plus worker-focused tests. These appear to improve job claiming, leases, retries, and error handling, and need their own focused validation before future queue or worker edits begin.
+
+Allowed files:
+
+- `storage/repo_jobs.py`
+- `services/analysis_jobs.py`
+- `workers/analysis_worker.py`
+- `tests/test_repo_jobs_claim.py`
+- `tests/conftest.py`
+- `tests/test_analysis_worker_errors.py`
+- `docs/TASKS.md` only if marking this task DONE after commit
+
+Scope:
+
+- Inspect the existing dirty worker lease and retry changes.
+- Keep behavior focused on queue claiming, lease expiry, retry, and error handling.
+- Do not touch API enqueue, rollup, memory, Ollama, desktop, `.gitignore`, audio ingest, Health, Quick Capture, or unrelated tests.
+- Stage and commit only files in the allowed list if the validation succeeds.
+
+Acceptance:
+
+- Job claiming and lease behavior are covered by regression tests.
+- Worker error and retry behavior are covered by regression tests.
+- Workflow-required validation passes.
+- Cached diff contains only allowed files.
+- No unrelated dirty or untracked files are staged or committed.
+
+Validation:
+
+```bash
+git status --short
+git diff -- storage/repo_jobs.py services/analysis_jobs.py workers/analysis_worker.py tests/test_repo_jobs_claim.py tests/conftest.py tests/test_analysis_worker_errors.py
+.venv/bin/python -m pytest -q tests/test_repo_jobs_claim.py tests/test_analysis_worker_errors.py
+.venv/bin/python -m pytest -q
+.venv/bin/python -m compileall -q api services pipeline storage bot llm workers scripts server.py block_analyze.py desktop_app.py
+git diff --cached --name-only
+git diff --cached --check
+```
+
+## ROLLUP-001 - Validate entry version, rollup, and memory idempotency
+
+Status: READY
+
+Goal:
+
+Validate and commit the existing entry update, rollup stale-protection, audio reanalysis, and memory idempotency changes without mixing them with queue, worker, Ollama, desktop, repo-cleanup, Health, or Quick Capture work.
+
+Problem:
+
+REPO-005 identified dirty storage, runner, audio reanalysis, and rollup-related tests. These changes appear to protect analysis results against stale entry versions and make rollup or memory updates idempotent.
+
+Allowed files:
+
+- `services/analysis_runner.py`
+- `services/audio_ingest_service.py`
+- `storage/repo_entries.py`
+- `storage/repo_jobs.py`
+- `workers/analysis_worker.py`
+- `tests/conftest.py`
+- `tests/test_audio_reanalyze.py`
+- `tests/test_entry_update_flow.py`
+- `tests/test_memory_update_idempotency.py`
+- `tests/test_rollup_stale_protection.py`
+- `docs/TASKS.md` only if marking this task DONE after commit
+
+Scope:
+
+- Inspect the existing dirty rollup, stale-protection, and memory-idempotency changes.
+- Keep optional audio behavior from becoming required for the text diary core.
+- Do not touch API enqueue, Ollama, desktop, `.gitignore`, Health, Quick Capture, or unrelated tests.
+- Stage and commit only files in the allowed list if the validation succeeds.
+
+Acceptance:
+
+- Entry-version stale protection is covered by regression tests.
+- Rollup or memory idempotency behavior is covered by regression tests.
+- Text diary core remains usable without audio-heavy dependencies.
+- Workflow-required validation passes.
+- Cached diff contains only allowed files.
+- No unrelated dirty or untracked files are staged or committed.
+
+Validation:
+
+```bash
+git status --short
+git diff -- services/analysis_runner.py services/audio_ingest_service.py storage/repo_entries.py storage/repo_jobs.py workers/analysis_worker.py tests/conftest.py tests/test_audio_reanalyze.py tests/test_entry_update_flow.py tests/test_memory_update_idempotency.py tests/test_rollup_stale_protection.py
+.venv/bin/python -m pytest -q tests/test_audio_reanalyze.py tests/test_entry_update_flow.py tests/test_memory_update_idempotency.py tests/test_rollup_stale_protection.py
+.venv/bin/python -m pytest -q
+.venv/bin/python -m compileall -q api services pipeline storage bot llm workers scripts server.py block_analyze.py desktop_app.py
+git diff --cached --name-only
+git diff --cached --check
+```
+
+## OLLAMA-001 - Decide Ollama autostart behavior
+
+Status: READY
+
+Goal:
+
+Decide whether the existing Ollama client autostart behavior belongs in this baseline, then either commit it as a focused change or record the decision not to keep it.
+
+Problem:
+
+REPO-005 identified dirty Ollama client changes and a focused Ollama test. Autostart behavior affects local runtime expectations and should not be mixed with API, worker, rollup, desktop, Health, or Quick Capture work.
+
+Allowed files:
+
+- `llm/ollama_client.py`
+- `tests/test_ollama_client.py`
+- `docs/TASKS.md` only if marking this task DONE after commit or recording WONTFIX
+
+Scope:
+
+- Inspect the existing Ollama client changes and test.
+- Decide whether autostart should be part of the current local-first baseline.
+- If keeping it, validate and commit only the allowed files.
+- If rejecting it, record WONTFIX or a follow-up cleanup task without reverting unrelated work.
+- Do not touch API, services, storage, workers, desktop, `.gitignore`, Health, Quick Capture, or unrelated tests.
+
+Acceptance:
+
+- The Ollama autostart decision is explicit.
+- If kept, focused tests cover the behavior and validation passes.
+- If rejected, the task records the reason and no implementation work is committed.
+- Cached diff contains only allowed files if a commit is made.
+- No unrelated dirty or untracked files are staged or committed.
+
+Validation:
+
+```bash
+git status --short
+git diff -- llm/ollama_client.py tests/test_ollama_client.py docs/TASKS.md
+.venv/bin/python -m pytest -q tests/test_ollama_client.py
+.venv/bin/python -m pytest -q
+.venv/bin/python -m compileall -q api services pipeline storage bot llm workers scripts server.py block_analyze.py desktop_app.py
+git diff --cached --name-only
+git diff --cached --check
+```
+
+## DESKTOP-001 - Decide whether desktop_app.py belongs in this baseline
+
+Status: READY
+
+Goal:
+
+Decide whether the untracked `desktop_app.py` belongs in this baseline, then either register a future implementation task or intentionally leave it out of the current baseline.
+
+Problem:
+
+REPO-005 identified `desktop_app.py` as an untracked desktop entry layer. Desktop remains optional and must not become a required dependency of the core text diary system, so this file needs an explicit baseline decision before desktop or Quick Capture work continues.
+
+Allowed files:
+
+- `docs/TASKS.md`
+- `desktop_app.py` only if the executing prompt explicitly authorizes inspecting or staging the desktop baseline file
+
+Scope:
+
+- Decide whether `desktop_app.py` should be kept, deferred, or removed in a later explicit task.
+- Do not implement desktop behavior.
+- Do not make desktop dependencies required for the core text diary system.
+- Do not touch API, services, storage, workers, Ollama, `.gitignore`, Health, Quick Capture, or tests.
+- Do not stage or commit `desktop_app.py` unless the executing prompt explicitly requires a desktop baseline commit.
+
+Acceptance:
+
+- The baseline decision for `desktop_app.py` is explicit.
+- If deferred, a future desktop task is registered instead of implemented.
+- If kept, the allowed file scope and validation for the desktop baseline are explicit before any commit.
+- No source, test, or untracked files are touched unless explicitly authorized by the executing prompt.
+
+Validation:
+
+```bash
+git status --short
+git diff -- docs/TASKS.md
+git ls-files --others --exclude-standard desktop_app.py
+git diff --cached --name-only
+git diff --cached --check
+```
+
+## REPO-008 - Decide .omx ignore policy
+
+Status: READY
+
+Goal:
+
+Decide whether `.omx/` should be ignored in this repository and make only the minimal policy or task-queue update needed.
+
+Problem:
+
+REPO-005 identified `.gitignore` dirty state related to local OMX files. The repo needs an explicit policy decision before `.gitignore` is changed or committed, because local agent state should not be mixed with source, test, Health, Quick Capture, desktop, or runtime behavior work.
+
+Allowed files:
+
+- `.gitignore`
+- `docs/TASKS.md` only if marking this task DONE after commit or recording the policy decision
+
+Scope:
+
+- Inspect the existing `.gitignore` change.
+- Decide whether `.omx/` belongs in the repo ignore policy.
+- If changing `.gitignore`, keep the edit minimal and commit only allowed files.
+- Do not touch source files, tests, untracked files, desktop, Ollama, Health, Quick Capture, or implementation code.
+
+Acceptance:
+
+- The `.omx/` ignore policy decision is explicit.
+- If `.gitignore` is changed, the diff is minimal and only policy-related.
+- Cached diff contains only allowed files if a commit is made.
+- No source, test, or untracked files are staged or committed.
+
+Validation:
+
+```bash
+git status --short
+git diff -- .gitignore docs/TASKS.md
+git diff --cached --name-only
+git diff --cached --check
+```
+
 ## HEALTH-001 - Core Health / Diagnostics API
 
 Status: TODO
