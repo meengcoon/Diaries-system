@@ -434,7 +434,16 @@ async def analyze_block_cloud(
         )
 
     async with OllamaClient(timeout_s=0.0) as local_client:
+        local_ready: bool | None = None
+
         async def _local_call(stage: str, messages: list[dict[str, str]], response_format: Optional[dict[str, Any]], max_tokens: int) -> StageCallResult:
+            nonlocal local_ready
+            if local_ready is None:
+                local_ready = await local_client.ensure_server_available()
+            if not local_ready:
+                raise OllamaError(
+                    f"local fallback unavailable: Ollama server is not reachable at {local_client.base_url}"
+                )
             content, ms = await local_client.chat_text(
                 model=PHI_MODEL,
                 messages=messages,

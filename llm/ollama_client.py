@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import asyncio
 import json
+import shutil
+import subprocess
 import time
 import urllib.error
 import urllib.request
@@ -95,6 +97,58 @@ class OllamaClient:
 
     async def _post_json(self, url: str, payload: Dict[str, Any]) -> Dict[str, Any]:
         return await asyncio.to_thread(self._post_json_sync, url, payload)
+
+    def _healthcheck_sync(self) -> bool:
+        req = urllib.request.Request(
+            url=f"{self.base_url}/api/tags",
+            headers={"Accept": "application/json"},
+            method="GET",
+        )
+        with urllib.request.urlopen(req, timeout=max(1.0, self.connect_timeout_s)) as resp:
+            return int(getattr(resp, "status", 200) or 0) < 500
+
+    async def is_server_available(self) -> bool:
+        try:
+            return await asyncio.to_thread(self._healthcheck_sync)
+        except Exception:
+            return False
+
+    async def ensure_server_available(
+        self,
+        *,
+        startup_timeout_s: float | None = None,
+        autostart: bool | None = None,
+    ) -> bool:
+        if await self.is_server_available():
+            return True
+
+        should_autostart = env_bool("OLLAMA_AUTOSTART", False) if autostart is None else bool(autostart)
+        if not should_autostart:
+            return False
+
+        ollama_bin = env_str("OLLAMA_BIN", "ollama") or "ollama"
+        resolved_bin = shutil.which(ollama_bin)
+        if not resolved_bin:
+            return False
+
+        try:
+            subprocess.Popen(
+                [resolved_bin, "serve"],
+                stdin=subprocess.DEVNULL,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                start_new_session=True,
+            )
+        except Exception:
+            return False
+
+        timeout_s = max(1.0, float(startup_timeout_s or env_float("OLLAMA_STARTUP_TIMEOUT_S", 20.0)))
+        deadline = time.monotonic() + timeout_s
+        while time.monotonic() < deadline:
+            if await self.is_server_available():
+                return True
+            await asyncio.sleep(0.25)
+        return False
 
     async def chat(
         self,

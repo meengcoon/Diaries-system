@@ -1047,7 +1047,7 @@ git diff --cached --check
 
 ## OLLAMA-001 - Decide Ollama autostart behavior
 
-Status: READY
+Status: DONE
 
 Goal:
 
