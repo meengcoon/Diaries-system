@@ -993,7 +993,7 @@ git diff --cached --check
 
 ## ROLLUP-001 - Validate entry version, rollup, and memory idempotency
 
-Status: READY
+Status: DONE
 
 Goal:
 

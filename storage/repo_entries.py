@@ -205,7 +205,12 @@ def list_recent_entry_summaries(n: int = 8) -> List[Dict[str, Any]]:
     with _conn_ro() as conn:
         rows = conn.execute(
             """
-            SELECT e.id AS entry_id, e.created_at AS created_at, a.analysis_json AS analysis_json
+            SELECT
+                e.id AS entry_id,
+                e.created_at AS created_at,
+                a.analysis_json AS analysis_json,
+                a.entry_version AS entry_version,
+                a.analysis_hash AS analysis_hash
             FROM entries e
             JOIN entry_analysis a ON a.entry_id = e.id
             ORDER BY e.created_at DESC
@@ -221,6 +226,8 @@ def list_recent_entry_summaries(n: int = 8) -> List[Dict[str, Any]]:
             {
                 "entry_id": int(r["entry_id"]),
                 "created_at": r["created_at"],
+                "entry_version": int(r["entry_version"] or 0),
+                "analysis_hash": str(r["analysis_hash"] or ""),
                 "summary_1_3": obj.get("summary_1_3"),
                 "open_insight": obj.get("open_insight"),
                 "topics": obj.get("topics") or [],
@@ -237,7 +244,12 @@ def get_entry_analysis_brief(entry_id: int) -> Optional[Dict[str, Any]]:
     with _conn_ro() as conn:
         row = conn.execute(
             """
-            SELECT e.id AS entry_id, e.created_at AS created_at, a.analysis_json AS analysis_json
+            SELECT
+                e.id AS entry_id,
+                e.created_at AS created_at,
+                a.analysis_json AS analysis_json,
+                a.entry_version AS entry_version,
+                a.analysis_hash AS analysis_hash
             FROM entries e
             JOIN entry_analysis a ON a.entry_id = e.id
             WHERE e.id=?
@@ -252,6 +264,8 @@ def get_entry_analysis_brief(entry_id: int) -> Optional[Dict[str, Any]]:
     return {
         "entry_id": int(row["entry_id"]),
         "created_at": row["created_at"],
+        "entry_version": int(row["entry_version"] or 0),
+        "analysis_hash": str(row["analysis_hash"] or ""),
         "summary_1_3": obj.get("summary_1_3"),
         "open_insight": obj.get("open_insight"),
         "topics": obj.get("topics") or [],
