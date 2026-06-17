@@ -682,6 +682,120 @@ git diff --cached --name-only
 git diff --cached --check
 ```
 
+## REPO-005 - Investigate existing source and test dirty changes
+
+Status: READY
+
+Goal:
+
+Inspect and classify the remaining source/test dirty changes before starting BUG-002, HEALTH-001, DOCS-008, or Quick Capture work.
+
+Problem:
+
+REPO-002 identified real source/test dirty changes across API, services, storage, workers, LLM, and tests. These changes may represent unfinished historical work. They must be understood before new implementation tasks begin, otherwise future commits may accidentally mix unrelated old changes with new work.
+
+Allowed files:
+
+- `docs/TASKS.md`
+
+Scope:
+
+- Audit only.
+- Do not modify file contents.
+- Do not stage files.
+- Do not commit.
+- Do not delete files.
+- Inspect diffs for:
+  - `.gitignore`
+  - `api/routes_meta.py`
+  - `block_analyze.py`
+  - `llm/ollama_client.py`
+  - `services/analysis_jobs.py`
+  - `services/analysis_runner.py`
+  - `services/analysis_service.py`
+  - `services/audio_ingest_service.py`
+  - `storage/repo_entries.py`
+  - `storage/repo_jobs.py`
+  - `workers/analysis_worker.py`
+  - `tests/test_repo_jobs_claim.py`
+  - untracked `tests/*.py`
+  - `desktop_app.py`
+- Classify each file into:
+  - A. should be committed as a coherent existing feature/fix
+  - B. should be split into multiple future tasks
+  - C. should be reverted/removed later
+  - D. should be left untouched for now
+  - E. requires user decision
+- Recommend the next concrete task after investigation.
+
+Acceptance:
+
+- Reports what each dirty source/test file appears to change.
+- Identifies coherent groups of related files.
+- Identifies whether any group appears safe to commit soon.
+- Identifies which files must not be touched before BUG-002 or HEALTH-001.
+- Recommends next task.
+- Confirms no files were modified, staged, committed, or deleted.
+
+Validation:
+
+```bash
+git status --short
+git diff --stat
+git diff --name-only
+git diff -- .gitignore
+git diff -- api/routes_meta.py block_analyze.py llm/ollama_client.py
+git diff -- services/analysis_jobs.py services/analysis_runner.py services/analysis_service.py services/audio_ingest_service.py
+git diff -- storage/repo_entries.py storage/repo_jobs.py workers/analysis_worker.py
+git diff -- tests/test_repo_jobs_claim.py
+git ls-files --others --exclude-standard tests
+git diff --cached --name-only
+```
+
+## REPO-006 - Commit REPO-005 task bookkeeping
+
+Status: READY
+
+Goal:
+
+Commit only the `docs/TASKS.md` bookkeeping that registered REPO-005 after the read-only source/test dirty-change audit.
+
+Problem:
+
+REPO-005 was registered in `docs/TASKS.md` so the source/test dirty-change audit could be executed safely. That task bookkeeping now needs its own narrow docs-only commit before BUG-002, HEALTH-001, DOCS-008, Quick Capture, or any source/test cleanup work starts.
+
+Allowed files:
+
+- `docs/TASKS.md`
+
+Scope:
+
+- Commit only `docs/TASKS.md`.
+- Do not modify application code.
+- Do not modify tests.
+- Do not stage source/test dirty files.
+- Do not stage untracked files.
+- Do not start BUG-002, HEALTH-001, DOCS-008, Quick Capture, or source/test cleanup work.
+- Do not use `git add .` or broad staging commands.
+
+Acceptance:
+
+- `docs/TASKS.md` includes REPO-005 and REPO-006.
+- Cached diff contains exactly `docs/TASKS.md`.
+- No source/test dirty files are staged or committed.
+- No untracked files are staged or committed.
+- Commit message subject is:
+  `docs: record REPO-005 audit task`
+
+Validation:
+
+```bash
+git status --short
+rg -n "REPO-005|REPO-006|Commit REPO-005 task bookkeeping" docs/TASKS.md
+git diff --cached --name-only
+git diff --cached --check
+```
+
 ## HEALTH-001 - Core Health / Diagnostics API
 
 Status: TODO
