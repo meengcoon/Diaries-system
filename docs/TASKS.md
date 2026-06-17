@@ -388,6 +388,247 @@ rg -n "python3 -m (pytest|compileall)" AGENTS.md docs/TASKS.md docs/WORKFLOW.md
 rg -n "\.venv/bin/python -m pytest|\.venv/bin/python -m compileall|DOCS-007|Status: DONE" AGENTS.md docs/TASKS.md docs/WORKFLOW.md
 ```
 
+## DOCS-008 - Optimize Governance Docs for Low-Token Task Capsules
+
+Status: BLOCKED
+
+Depends on:
+
+- `REPO-002`
+
+Goal:
+
+Optimize the current four-file governance system so future Codex runs read less markdown context while preserving task discipline, scope control, validation gates, and stop conditions.
+
+Problem:
+
+The current four-file system controls Codex behavior, but it can still waste tokens if Codex repeatedly reads full markdown files such as `AGENTS.md`, `docs/TASKS.md`, `docs/WORKFLOW.md`, or future logs. The next optimization is not to add more governance documents, but to make the existing system route Codex toward small task capsules and indexed reads.
+
+Do not implement until:
+
+- `REPO-002` has inspected the remaining dirty worktree diffs.
+- The team has decided what to do with existing dirty source/test files.
+- The repo is safe enough for a docs-structure change.
+
+Target design:
+
+- Keep `AGENTS.md` short and permanent.
+- Add a large markdown read policy:
+  - Do not cat full markdown files over 200 lines.
+  - Use `rg`, `grep`, `sed` line ranges, `head`, or `tail`.
+  - Prefer indexes and task capsules over full historical files.
+  - Before reading a large markdown file, state why it is necessary.
+- Add or define `CURRENT_TASK.md` as the current task capsule.
+- Make `CURRENT_TASK.md` self-contained for the active task:
+  - task ID
+  - mode
+  - read policy
+  - objective
+  - allowed files
+  - forbidden files
+  - relevant facts
+  - commands
+  - acceptance
+  - final response format
+- Keep `docs/TASKS.md` as a task index instead of a growing full task-contract file.
+- Move detailed task contracts into `docs/tasks/<TASK_ID>.md` where appropriate.
+- Keep `docs/PROJECT_STATE.md` as current facts only.
+- Keep `docs/WORKFLOW.md` focused on operating process and stop gates, not task history.
+- Do not create a WORK_LOG system unless the diary project actually needs historical logs later.
+
+Allowed files for the future DOCS-008 execution:
+
+- `AGENTS.md`
+- `docs/TASKS.md`
+- `docs/WORKFLOW.md`
+- `docs/PROJECT_STATE.md` only if facts need updating
+- `CURRENT_TASK.md` if introduced as an ignored task capsule
+- `.gitignore` only if `CURRENT_TASK.md` must be ignored
+- `docs/tasks/<TASK_ID>.md` files if task capsules are introduced
+
+Scope:
+
+- Design and implement the low-token governance layout.
+- Do not modify application code.
+- Do not modify tests.
+- Do not change product behavior.
+- Do not use this task to clean unrelated dirty files.
+
+Acceptance:
+
+- DOCS-008 preserves the four-file governance intent:
+  - `AGENTS.md` = permanent routing and hard rules
+  - `docs/PROJECT_STATE.md` = current facts only
+  - `docs/TASKS.md` = task queue/index
+  - `docs/WORKFLOW.md` = operating process and stop gates
+- Codex has a clear rule to avoid full reads of large markdown files.
+- The active task can be represented as a compact `CURRENT_TASK.md` capsule.
+- `docs/TASKS.md` either remains manageable or points to per-task capsule files.
+- No application code or tests are changed.
+- Future Codex prompts can be short launchers that rely on `CURRENT_TASK.md` and indexed reads.
+
+Validation:
+
+```bash
+git diff --check
+git diff --cached --name-only
+rg -n "DOCS-008|low-token|CURRENT_TASK|large markdown|task capsule" docs/TASKS.md AGENTS.md docs/WORKFLOW.md docs/PROJECT_STATE.md
+```
+
+## REPO-001 - Audit Dirty Worktree
+
+Status: READY
+
+Goal:
+
+Audit the remaining dirty and untracked worktree files after the core test baseline and control documents have been committed.
+
+Problem:
+
+The repository still contains unrelated dirty and untracked files. Before starting BUG-002, HEALTH-001, or Quick Capture work, the remaining worktree state must be classified so future tasks do not accidentally touch or commit unrelated changes.
+
+Allowed files:
+
+- `docs/TASKS.md`
+
+Scope:
+
+- Audit only.
+- Do not modify file contents.
+- Do not stage files.
+- Do not commit.
+- Do not delete files.
+- Classify files into A/B/C/D buckets:
+  - A. likely real changes that should be preserved or committed later
+  - B. likely temporary/generated files that should be ignored or removed later
+  - C. historical residual files to leave untouched for now
+  - D. uncertain files requiring user decision
+- Identify files that are risky to leave dirty before BUG-002 or HEALTH-001.
+- Recommend the next task after the audit.
+
+Acceptance:
+
+- Report tracked dirty files.
+- Report untracked files.
+- Classify files into A/B/C/D buckets.
+- Identify immediate blockers for future code tasks.
+- Recommend the next task.
+- Confirm no files were modified, staged, committed, or deleted.
+
+Validation:
+
+```bash
+git status --short
+git diff --name-only
+git ls-files --others --exclude-standard
+git diff --cached --name-only
+```
+
+## REPO-002 - Inspect Dirty Worktree Diffs
+
+Status: READY
+
+Goal:
+
+Inspect the actual diffs of the remaining dirty and untracked worktree files after REPO-001, without modifying, staging, committing, or deleting anything.
+
+Problem:
+
+REPO-001 identified many dirty and untracked files, including application code, services, storage, workers, tests, `README.md`, `docs/TASKS.md`, `docs/operations.md`, and `desktop_app.py`. Before starting BUG-002, HEALTH-001, DOCS-008, or Quick Capture work, these changes must be understood so future tasks do not accidentally mix historical changes with new work.
+
+Allowed files:
+
+- `docs/TASKS.md`
+
+Scope:
+
+- Audit only.
+- Do not modify file contents.
+- Do not stage files.
+- Do not commit.
+- Do not delete files.
+- Inspect tracked diffs with focused commands.
+- Inspect untracked file summaries without editing them.
+- Classify each dirty or untracked file into:
+  - A. task bookkeeping / docs that should be committed soon
+  - B. environment documentation that should be committed separately
+  - C. likely real code/test work that needs its own task or commit
+  - D. likely obsolete/generated/residual files
+  - E. uncertain files requiring user decision
+- Recommend a concrete next action for each bucket.
+
+Acceptance:
+
+- Reports a grouped summary of tracked diffs.
+- Reports a grouped summary of untracked files.
+- Identifies whether `README.md` should be committed separately for BUG-001.
+- Identifies whether `docs/TASKS.md` should be committed as task bookkeeping.
+- Identifies which source/test files require separate investigation before BUG-002 or HEALTH-001.
+- Identifies whether `docs/operations.md` should remain untracked, be committed later, or require user decision.
+- Identifies whether `desktop_app.py` should remain untracked, be committed later, or require user decision.
+- Recommends the next task.
+- Confirms no files were modified, staged, committed, or deleted.
+
+Validation:
+
+```bash
+git status --short
+git diff --stat
+git diff --name-only
+git diff -- README.md docs/TASKS.md .gitignore
+git diff -- api/routes_meta.py block_analyze.py llm/ollama_client.py
+git diff -- services/analysis_jobs.py services/analysis_runner.py services/analysis_service.py services/audio_ingest_service.py
+git diff -- storage/repo_entries.py storage/repo_jobs.py workers/analysis_worker.py
+git diff -- tests/test_repo_jobs_claim.py
+git ls-files --others --exclude-standard
+git diff --cached --name-only
+```
+
+## REPO-003 - Commit task bookkeeping updates
+
+Status: READY
+
+Goal:
+
+Commit the current `docs/TASKS.md` bookkeeping updates created during the dirty worktree audit sequence.
+
+Problem:
+
+After the control-doc baseline commit, new task bookkeeping was added to `docs/TASKS.md` for REPO-001, REPO-002, and DOCS-008. These updates should be committed before further cleanup or implementation tasks so the task queue is no longer dependent on uncommitted working-tree state.
+
+Allowed files:
+
+- `docs/TASKS.md`
+
+Scope:
+
+- Commit only `docs/TASKS.md`.
+- Do not modify application code.
+- Do not modify tests.
+- Do not modify `README.md`.
+- Do not stage `README.md`.
+- Do not stage `docs/operations.md`.
+- Do not stage `AGENTS.md`, `docs/PROJECT_STATE.md`, or `docs/WORKFLOW.md` unless they are unexpectedly required by this task, in which case stop and report.
+- Do not stage unrelated dirty or untracked files.
+
+Acceptance:
+
+- `docs/TASKS.md` includes REPO-001, REPO-002, and DOCS-008.
+- `docs/TASKS.md` records REPO-001 and REPO-002 as completed or audit-executed if that status is already reflected; otherwise do not invent completion state.
+- Cached diff contains exactly `docs/TASKS.md`.
+- Commit message subject is:
+  `docs: record repository cleanup tasks`
+- No other files are staged or committed.
+
+Validation:
+
+```bash
+git status --short
+rg -n "REPO-001|REPO-002|DOCS-008" docs/TASKS.md
+git diff --cached --name-only
+git diff --cached --check
+```
+
 ## HEALTH-001 - Core Health / Diagnostics API
 
 Status: TODO
