@@ -1091,6 +1091,55 @@ git diff --cached --name-only
 git diff --cached --check
 ```
 
+## WORKER-LOOP-001 - Decide analysis worker loop mode behavior
+
+Status: READY
+
+Goal:
+
+Decide whether the remaining dirty `workers/analysis_worker.py` loop-mode behavior should be committed as part of the analysis worker baseline.
+
+Problem:
+
+After OLLAMA-001, the remaining `workers/analysis_worker.py` diff appears to add long-running worker loop behavior. This must be handled separately from Ollama readiness, worker lease/retry behavior, desktop launcher behavior, repo ignore policy, Health, Quick Capture, queue, or rollup work.
+
+Allowed files:
+
+- `workers/analysis_worker.py`
+- `tests/test_analysis_worker_loop.py` only if focused loop-mode regression coverage is required
+- `docs/TASKS.md` only if marking this task DONE, BLOCKED, or WONTFIX after validation
+
+Scope:
+
+- Inspect the remaining loop-mode diff in `workers/analysis_worker.py`.
+- Decide whether loop mode belongs in the committed analysis worker behavior.
+- If keeping it, ensure loop mode is explicit opt-in behavior and does not change the default one-shot worker behavior.
+- If rejecting it, remove the loop-mode dirty diff or record WONTFIX without touching unrelated files.
+- Keep this task separate from Ollama readiness, lease/retry behavior, desktop launcher behavior, `.gitignore`, Health, Quick Capture, queue, and rollup work.
+- Stage and commit only files in the allowed list if the decision is implemented successfully.
+
+Acceptance:
+
+- The loop-mode decision is explicit.
+- Default worker execution remains one-shot unless loop mode is explicitly requested.
+- If kept, focused regression coverage validates loop-mode behavior without relying on an infinite test run.
+- If rejected, the loop-mode dirty diff is removed or the rejection is recorded without mixing unrelated work.
+- Workflow-required validation passes.
+- Cached diff contains only allowed files if a commit is made.
+- `.gitignore`, `desktop_app.py`, Ollama files, API files, service files, storage files, and unrelated tests are not staged or committed.
+
+Validation:
+
+```bash
+git status --short
+git diff -- workers/analysis_worker.py tests/test_analysis_worker_loop.py docs/TASKS.md
+.venv/bin/python -m pytest -q tests/test_analysis_worker_loop.py
+.venv/bin/python -m pytest -q
+.venv/bin/python -m compileall -q api services pipeline storage bot llm workers scripts server.py block_analyze.py desktop_app.py
+git diff --cached --name-only
+git diff --cached --check
+```
+
 ## DESKTOP-001 - Decide whether desktop_app.py belongs in this baseline
 
 Status: READY
