@@ -1317,6 +1317,62 @@ git diff --cached --name-only
 git diff --cached --check
 ```
 
+## REPO-009 - Diagnose pytest startup and pre-push validation environment
+
+Status: READY
+
+Goal:
+
+Diagnose why the canonical project validation command now hangs and determine the safe path for pushing the existing local `HEALTH-001` commit without bypassing hooks blindly.
+
+Problem:
+
+The local branch is ahead of `origin/main` by `c80908a feat: expose core diagnostics without loading optional audio`, but `git push origin main` is blocked by the configured global pre-push hook. A read-only diagnosis found that the active hook comes from `/Users/lincma/.codex/git-hooks/pre-push`, runs plain `pytest -q`, resolves to a global Python 3.13 pytest, and fails with `ModuleNotFoundError: No module named 'storage'`. The canonical `.venv/bin/python -m pytest -q` command and `PYTHONPATH=. .venv/bin/python -m pytest -q` currently hang during pytest startup/import.
+
+Allowed files:
+
+- `docs/TASKS.md` only if marking this task DONE, BLOCKED, or recording a follow-up task
+- `docs/PROJECT_STATE.md` only if recording a stable validation-environment fact or risk
+- `docs/operations.md` only if documenting the accepted local validation or push procedure
+- `pytest.ini` or `pyproject.toml` only if diagnosis proves a minimal pytest configuration fix is the required repo-side correction
+
+Scope:
+
+- Inspect pytest configuration files if present.
+- Inspect `requirements.txt` and `requirements-dev.txt`.
+- Inspect import-time side effects in `tests/conftest.py` and focused health tests.
+- Check pytest plugin autoload behavior.
+- Compare:
+  - `.venv/bin/python -m pytest -q`
+  - `PYTHONPATH=. .venv/bin/python -m pytest -q`
+  - `PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 .venv/bin/python -m pytest -q`
+  - focused health test command if useful
+- Inspect the configured global pre-push hook read-only.
+- Do not edit global hook files.
+- Do not push.
+- Do not bypass hooks.
+- Do not start BUG-002, Quick Capture, DOCS-008, or implementation work.
+- Do not modify source or test code unless a minimal validation-config fix is explicitly proven and limited to the allowed config files.
+
+Acceptance:
+
+- Identifies whether the `.venv` pytest hang is caused by project code/config, pytest/plugin behavior, local virtualenv state, or the global hook environment.
+- Identifies whether plain hook `pytest -q` is unsafe because it uses global Python instead of the project virtualenv.
+- Reports whether manual canonical validation can pass.
+- Reports whether a controlled hook-bypass push would be safe, or why it is blocked.
+- Records any required follow-up task instead of broadening into unrelated implementation work.
+- Cached diff contains only allowed files if a commit is made.
+- No global hook files, source files, test files, unrelated docs, or untracked files are modified, staged, committed, pushed, or deleted.
+
+Validation:
+
+```bash
+git status --short --branch
+git diff --cached --name-only
+git diff --cached --check
+git diff --check
+```
+
 ## HEALTH-001 - Core Health / Diagnostics API
 
 Status: TODO
