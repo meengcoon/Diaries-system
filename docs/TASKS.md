@@ -475,6 +475,46 @@ git diff --cached --name-only
 rg -n "DOCS-008|low-token|CURRENT_TASK|large markdown|task capsule" docs/TASKS.md AGENTS.md docs/WORKFLOW.md docs/PROJECT_STATE.md
 ```
 
+## DOCS-009 - Codify Dirty Worktree and Task Boundary Rules
+
+Status: OPEN
+
+Goal:
+
+Codify reusable dirty-worktree, task-boundary, staging, validation, and final-response rules so future Codex prompts can be shorter.
+
+Allowed files:
+
+- `AGENTS.md`
+- `docs/WORKFLOW.md`
+- `docs/TASKS.md` only for task status bookkeeping
+
+Scope:
+
+- In `AGENTS.md`, add or refine permanent rules covering dirty-worktree preflight, unrelated dirty/untracked files, one-task execution, task-registration-only handling, scope boundaries, explicit staging, focused commits, and stopping after a successful task commit.
+- In `docs/WORKFLOW.md`, add or refine workflow rules covering missing-task handling, dirty-worktree preflight, focused validation before broader validation, required pre-commit diff checks, out-of-scope validation blockers, final response labels, and final response evidence fields.
+- Keep edits concise; tighten or consolidate existing rules instead of duplicating them.
+- Do not touch `.gitignore`, `workers/analysis_worker.py`, `desktop_app.py`, source files, test files, untracked files, or implementation code.
+- Do not start `WORKER-LOOP-001`, `DESKTOP-001`, `REPO-008`, `BUG-002`, `HEALTH-001`, Quick Capture, `DOCS-008`, or any other task.
+- Do not combine this task with any other registration, implementation, cleanup, or refactor work.
+
+Acceptance:
+
+- `AGENTS.md` clearly codifies dirty-worktree, task-boundary, staging, commit, and stop-after-commit rules.
+- `docs/WORKFLOW.md` clearly codifies missing-task handling, dirty-worktree preflight, validation ordering, pre-commit diff checks, out-of-scope validation blockers, and final response requirements.
+- Final response labels include `PASS_AND_COMMITTED`, `TASK_REGISTERED_ONLY`, `BLOCKED`, and `STOPPED`.
+- Final response requirements include selected task, files modified, files staged, commit hash if committed, validation commands run, final git status, and confirmation that unrelated dirty/untracked files were not touched.
+- No files outside the allowed execution scope are changed.
+
+Validation:
+
+```bash
+git diff --check
+git diff --cached --name-only
+git diff --cached --check
+rg -n "dirty worktree|unrelated dirty|git add \\.|staged diff|one task|TASK_REGISTERED_ONLY|PASS_AND_COMMITTED|BLOCKED|STOPPED|git diff --check|git diff --cached --name-only|git diff --cached --check" AGENTS.md docs/WORKFLOW.md
+```
+
 ## REPO-001 - Audit Dirty Worktree
 
 Status: READY
