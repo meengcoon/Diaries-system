@@ -1319,7 +1319,15 @@ git diff --cached --check
 
 ## REPO-009 - Diagnose pytest startup and pre-push validation environment
 
-Status: READY
+Status: DONE
+
+Completed evidence:
+
+- Read-only diagnosis found the active pre-push hook comes from global `core.hooksPath` at `/Users/lincma/.codex/git-hooks/pre-push`.
+- The hook runs plain `pytest -q`, which resolves to global Python 3.13 and fails outside the project environment.
+- `.venv/bin/python -m pytest -q` completed with 43 passed and 2 warnings in 117.71s.
+- `PATH="$PWD/.venv/bin:$PATH" PYTHONPATH=. pytest -q` completed with 43 passed and 2 warnings in 1.59s and is hook-compatible without editing or bypassing the hook.
+- No project source, tests, requirements, global hook files, or global config were modified.
 
 Goal:
 
