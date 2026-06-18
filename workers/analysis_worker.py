@@ -460,6 +460,41 @@ async def analyze_block_cloud(
         )
 
 
+async def run_forever(
+    *,
+    limit: int,
+    max_attempts: int,
+    retry_failed: bool,
+    timeout_s: float,
+    job_timeout_s: float,
+    stale_seconds: int,
+    backend: str,
+    preferred_provider: str,
+    poll_seconds: float,
+) -> int:
+    while True:
+        unstuck = db.reset_stale_running_block_jobs(stale_seconds=int(stale_seconds))
+        stats_before = _job_stats()
+        out = await run_once(
+            limit=int(limit),
+            max_attempts=int(max_attempts),
+            retry_failed=bool(retry_failed),
+            timeout_s=float(timeout_s),
+            job_timeout_s=float(job_timeout_s),
+            backend=str(backend),
+            preferred_provider=str(preferred_provider),
+        )
+        out["unstuck"] = unstuck
+        out["backend"] = str(backend)
+        out["preferred_provider"] = str(preferred_provider)
+        out["stats_before"] = stats_before
+        out["stats_after"] = _job_stats()
+        out["loop"] = True
+        print(json.dumps(out, ensure_ascii=False), flush=True)
+        if int(out.get("processed", 0) or 0) <= 0:
+            await asyncio.sleep(max(1.0, float(poll_seconds)))
+
+
 def main(argv: list[str] | None = None) -> int:
     p = argparse.ArgumentParser()
     p.add_argument("--limit", type=int, default=5)
@@ -473,6 +508,8 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--stale-seconds", type=int, default=1800)
     p.add_argument("--backend", choices=["local", "cloud"], default="cloud")
     p.add_argument("--preferred-provider", choices=["deepseek", "qwen"], default="deepseek")
+    p.add_argument("--loop", action="store_true", help="keep polling the queue as a long-running worker")
+    p.add_argument("--poll-seconds", type=float, default=5.0)
 
     args = p.parse_args(argv)
 
@@ -513,6 +550,23 @@ def main(argv: list[str] | None = None) -> int:
             return 0
 
     try:
+        if args.loop:
+            return int(
+                asyncio.run(
+                    run_forever(
+                        limit=int(args.limit),
+                        max_attempts=int(args.max_attempts),
+                        retry_failed=bool(args.retry_failed),
+                        timeout_s=float(args.timeout_s),
+                        job_timeout_s=float(args.job_timeout_s),
+                        stale_seconds=int(args.stale_seconds),
+                        backend=str(args.backend),
+                        preferred_provider=str(args.preferred_provider),
+                        poll_seconds=float(args.poll_seconds),
+                    )
+                )
+                or 0
+            )
         out = asyncio.run(
             run_once(
                 limit=int(args.limit),
