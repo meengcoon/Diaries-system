@@ -1383,58 +1383,90 @@ git diff --check
 
 ## BUG-002 - Replace deprecated FastAPI on_event usage
 
-Status: BLOCKED
+Status: READY
 
-Blocked reason:
+Scoped by:
 
-- Existing docs only identify the high-level issue: FastAPI `on_event` deprecation remains.
-- Missing concrete bug description that identifies the affected lifecycle behavior and required compatibility behavior.
-- Missing allowed implementation files.
-- Missing acceptance criteria.
-- Missing validation requirements specific to this bugfix.
+- `BUG-002-SCOPE`
 
-Purpose:
+Problem:
 
-Resolve the remaining FastAPI `on_event` deprecation warning without changing API behavior, startup behavior, optional-module boundaries, or the core diary chain.
+FastAPI `0.123.1` emits a deprecation warning for `server.py` using `@app.on_event("startup")`.
+Read-only scope discovery found:
+
+- `server.py` is the only FastAPI app setup file: `app = FastAPI(title="Personal Diary AI & English Learning")`.
+- `server.py` is the only file with lifecycle usage: `@app.on_event("startup")`.
+- No `.on_event(` calls and no shutdown behavior were found.
+- Startup behavior currently calls `init_db()` and logs an error when `app.state.ingest_entry` is unavailable.
+- Existing `TestClient(server.app)` tests cover health, save/enqueue routes, fake-provider E2E, extreme input limits, and voice upload limits.
+- Existing import-boundary tests verify importing `api.routes_diary` and `server` does not load audio-heavy modules.
+
+Goal:
+
+Replace deprecated FastAPI startup-event registration with FastAPI lifespan startup while preserving API behavior, startup behavior, optional-module boundaries, and the core diary chain.
 
 Allowed files:
 
-- `docs/TASKS.md` only for future scope clarification while this task remains BLOCKED.
-- Implementation files are not defined yet.
+- `server.py`
+- `tests/test_server_lifespan.py`
+- `tests/test_import_boundaries.py` only if import-boundary assertions need focused extension
+- `docs/TASKS.md` only if marking this task DONE or BLOCKED after execution
+- `docs/PROJECT_STATE.md` only if recording removal of the stable FastAPI `on_event` risk after successful validation
 
 Scope:
 
-- Do not execute implementation while this task is BLOCKED.
-- A future scope-definition pass must define the allowed implementation files, acceptance criteria, and validation before any source or test files are modified.
-- Keep this separate from Health frontend, Quick Capture, DOCS-008, desktop, audio, and unrelated implementation work.
+- Replace `server.py` `@app.on_event("startup")` with a FastAPI lifespan context.
+- Preserve the existing `init_db()` startup call.
+- Preserve the existing ingest-unavailable error log behavior.
+- Preserve existing `app.state` setup, router registration, static-file behavior, and `uvicorn.run("server:app", ...)` behavior.
+- Do not add shutdown side effects unless they are required by the lifespan context and remain no-op.
+- Do not change API URLs, request/response payloads, database schema, migrations, upload/file behavior, audio behavior, desktop behavior, Quick Capture behavior, or frontend behavior.
+- Do not import audio-heavy modules from `server` or `api.routes_diary`.
 
 Acceptance:
 
-- This task remains blocked until the missing scope contract is filled in `docs/TASKS.md`.
-- The future executable task contract must define concrete allowed files, expected behavior, required tests or regression coverage, and validation commands.
-- No source files, test files, or unrelated docs are modified as part of this registration.
+- No `@app.on_event` or `.on_event(` usage remains in `server.py`.
+- `server.py` uses FastAPI lifespan startup.
+- `TestClient(server.app)` startup still initializes the database through `init_db()`.
+- Existing ingest-unavailable startup logging behavior is preserved.
+- Existing route behavior remains covered by focused and full tests.
+- Import-boundary validation still proves `api.routes_diary` and `server` do not load `pipeline.audio_features`, `services.audio_ingest_service`, `numpy`, `faster_whisper`, or ffmpeg-dependent code.
+- No source, test, or docs files outside the allowed list are changed.
 
 Validation:
 
-- BLOCKED until task-specific validation requirements are defined.
-- For future scope-only edits, use:
-
 ```bash
+rg -n "@app\.on_event|\.on_event\(" server.py api tests
+.venv/bin/python -m pytest -q tests/test_server_lifespan.py tests/test_import_boundaries.py tests/test_health.py
+.venv/bin/python -m pytest -q tests/test_fake_provider_e2e.py tests/test_extreme_inputs.py tests/test_api_enqueue_behavior.py tests/test_voice_chat_upload_limit.py
+.venv/bin/python -m pytest -q
+.venv/bin/python -m compileall -q api services pipeline storage bot llm workers scripts server.py block_analyze.py desktop_app.py
 git diff --check
 git diff --cached --name-only
 git diff --cached --check
-rg -n "(^## BUG-002\b|\bBUG-002\b)" docs/TASKS.md docs/PROJECT_STATE.md docs/WORKFLOW.md
 ```
 
 Stop conditions:
 
-- Stop if asked to execute BUG-002 while it remains BLOCKED.
-- Stop if execution would require touching source files, test files, or docs outside an updated allowed-files list.
-- Register or report follow-up scope work instead of implementing adjacent FastAPI, Health, Quick Capture, desktop, audio, or docs-governance changes.
+- Stop if replacing the lifecycle hook requires changing files outside the allowed list.
+- Stop if preserving startup behavior requires API contract changes, schema/migration changes, route rewrites, or optional audio/desktop/Quick Capture changes.
+- Stop if import-boundary validation shows the lifecycle change loads audio-heavy modules from text-diary imports.
+- Stop if validation requires modifying unrelated tests or source files.
+- Record any new issue as a separate task instead of broadening this task.
 
 ## BUG-002-SCOPE - Discover FastAPI lifecycle replacement scope
 
-Status: READY
+Status: DONE
+
+Completed findings:
+
+- `server.py` is the only FastAPI app setup file and creates `app = FastAPI(title="Personal Diary AI & English Learning")`.
+- The only deprecated lifecycle usage is `server.py` `@app.on_event("startup")`; no `.on_event(` calls were found.
+- Startup behavior to preserve is `init_db()` plus the ingest-unavailable error log.
+- No shutdown behavior exists.
+- FastAPI is pinned to `0.123.1`, and the replacement should use FastAPI lifespan.
+- Existing route/import coverage includes `tests/test_health.py`, `tests/test_import_boundaries.py`, `tests/test_fake_provider_e2e.py`, `tests/test_extreme_inputs.py`, `tests/test_api_enqueue_behavior.py`, and `tests/test_voice_chat_upload_limit.py`.
+- `BUG-002` now has executable allowed files, acceptance criteria, validation, and stop conditions.
 
 Goal:
 
