@@ -160,7 +160,7 @@ For normal backend/frontend changes:
 
 ```bash
 .venv/bin/python -m pytest -q
-.venv/bin/python -m compileall -q api services pipeline storage bot llm workers scripts server.py block_analyze.py desktop_app.py
+.venv/bin/python -m compileall -q api services pipeline storage bot llm workers scripts server.py block_analyze.py
 ```
 
 For import-boundary changes:

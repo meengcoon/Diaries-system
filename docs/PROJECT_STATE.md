@@ -12,10 +12,10 @@ Stabilization and observability before new feature expansion.
 
 ## Latest Known Validation
 
-- `.venv/bin/python -m pytest -q` -> 45 passed in 1.52s during REPO-010
+- `.venv/bin/python -m pytest -q` -> 45 passed in 1.51s during REPO-011
 - `PATH="$PWD/.venv/bin:$PATH" PYTHONPATH=. pytest -q` -> 45 passed in 1.34s during REPO-010
 - `rg -n "@app\.on_event|\.on_event\(" server.py api tests` absence check -> passed during BUG-002
-- `.venv/bin/python -m compileall -q api services pipeline storage bot llm workers scripts server.py block_analyze.py desktop_app.py` -> passed with `Can't list 'desktop_app.py'` because the optional desktop launcher is absent
+- `.venv/bin/python -m compileall -q api services pipeline storage bot llm workers scripts server.py block_analyze.py` -> passed without stale `desktop_app.py` noise during REPO-011
 
 ## Core Product Direction
 
@@ -49,6 +49,7 @@ save -> blocks -> jobs -> worker -> rollup -> FTS -> context_pack/chat
 - Core Health / Diagnostics API added.
 - FastAPI lifespan startup replaces deprecated `on_event` usage.
 - Pytest cache provider disabled in project config for stable validation.
+- Stale optional `desktop_app.py` target removed from canonical compileall validation.
 
 ## Known Risks
 

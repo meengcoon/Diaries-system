@@ -1474,7 +1474,16 @@ Stop conditions:
 
 ## REPO-011 - Remove stale desktop_app.py from compileall validation
 
-Status: READY
+Status: DONE
+
+Completed evidence:
+
+- Removed the stale `desktop_app.py` target from current canonical compileall
+  validation commands in `AGENTS.md` and `docs/WORKFLOW.md`.
+- Updated `docs/PROJECT_STATE.md` with the clean compileall validation fact.
+- `.venv/bin/python -m compileall -q api services pipeline storage bot llm workers scripts server.py block_analyze.py`
+  passed without printing `Can't list 'desktop_app.py'`.
+- `.venv/bin/python -m pytest -q` completed with 45 passed in 1.51s.
 
 Depends on:
 
