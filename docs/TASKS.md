@@ -1472,6 +1472,82 @@ Stop conditions:
   cache behavior.
 - Record any broader issue as a separate task instead of expanding this task.
 
+## REPO-011 - Remove stale desktop_app.py from compileall validation
+
+Status: READY
+
+Depends on:
+
+- `DESKTOP-002`
+- `REPO-010`
+
+Dependency status:
+
+- Satisfied: `DESKTOP-002` removed the blocked optional desktop launcher from the worktree.
+- Satisfied: `REPO-010` stabilized pytest cache behavior for validation.
+
+Goal:
+
+Remove the stale `desktop_app.py` target from current canonical compileall
+validation commands now that the optional launcher is absent.
+
+Problem:
+
+`desktop_app.py` was removed by `DESKTOP-002`, but current validation command
+references can still include it. `compileall` exits successfully but prints
+`Can't list 'desktop_app.py'`, making otherwise clean validation look noisy.
+
+Allowed files:
+
+- `AGENTS.md` only if it contains the current canonical compileall validation command
+- `docs/WORKFLOW.md` only if it contains the current canonical compileall validation command
+- `docs/PROJECT_STATE.md` only if recording the updated validation fact is required
+- `docs/TASKS.md` for task status bookkeeping or current non-historical validation command references
+- Config or script files only if they actually contain the current stale compileall validation command
+
+Scope:
+
+- Find all references to `desktop_app.py`.
+- Remove `desktop_app.py` only from stale current validation or compileall command references.
+- Preserve the rest of each validation command.
+- Preserve historical notes and completed-task evidence unless the executing prompt explicitly allows updating a current validation command there.
+- Do not modify application source files.
+- Do not modify tests unless a validation-only update is explicitly required and remains inside this task.
+- Do not restore `desktop_app.py`.
+- Do not start Quick Capture, DOCS-008, HEALTH-002, or unrelated implementation work.
+- Do not push.
+
+Acceptance:
+
+- Current canonical compileall validation no longer references `desktop_app.py`.
+- Historical notes are not broadly rewritten or removed.
+- Compileall validation runs without printing `Can't list 'desktop_app.py'`.
+- No application source files are modified.
+- No tests are modified unless explicitly required by a validation-only update.
+- Cached diff contains only files allowed by this task if a commit is made.
+
+Validation:
+
+```bash
+rg -n "desktop_app.py|compileall" .
+.venv/bin/python -m compileall -q api services pipeline storage bot llm workers scripts server.py block_analyze.py
+.venv/bin/python -m pytest -q
+git diff --check
+git diff --cached --name-only
+git diff --cached --check
+```
+
+Suggested commit message if executing:
+
+`chore: remove stale desktop compileall target`
+
+Stop conditions:
+
+- Stop if removing the stale reference requires modifying application source files.
+- Stop if validation requires restoring `desktop_app.py`.
+- Stop if the needed edit is outside documentation, configuration, or script validation surfaces.
+- Stop if broad historical cleanup would be required; record that as a separate task instead.
+
 ## BUG-002 - Replace deprecated FastAPI on_event usage
 
 Status: DONE
