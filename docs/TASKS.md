@@ -1226,6 +1226,49 @@ git diff --cached --name-only
 git diff --cached --check
 ```
 
+## DESKTOP-002 - Remove blocked desktop launcher from worktree
+
+Status: READY
+
+Goal:
+
+Remove the untracked blocked `desktop_app.py` launcher from the worktree because it was not accepted into the baseline by `DESKTOP-001`.
+
+Problem:
+
+`DESKTOP-001` is blocked because `desktop_app.py` imports undeclared dependency `requests`. The untracked launcher should not remain as unresolved worktree state, and it should not be converted into desktop product work without a new accepted task.
+
+Allowed files:
+
+- `desktop_app.py`
+- `docs/TASKS.md` only if marking this task DONE or BLOCKED after execution
+
+Scope:
+
+- Remove `desktop_app.py` from the worktree only because it is untracked, blocked, and not accepted into baseline.
+- Do not add `requests`.
+- Do not modify requirements files.
+- Do not implement desktop launcher behavior.
+- Do not convert this into Quick Capture, tray app, global hotkey, packaging, or desktop product work.
+- Do not touch API, services, storage, workers, Ollama, tests, `.gitignore`, or any other files.
+
+Acceptance:
+
+- `desktop_app.py` no longer appears as an untracked worktree file.
+- `DESKTOP-002` is marked DONE after removal.
+- No files outside `desktop_app.py` and allowed task bookkeeping are changed.
+- No desktop launcher implementation or dependency changes are introduced.
+
+Validation:
+
+```bash
+git status --short
+git ls-files --others --exclude-standard desktop_app.py
+git diff -- docs/TASKS.md
+git diff --cached --name-only
+git diff --cached --check
+```
+
 ## REPO-008 - Decide .omx ignore policy
 
 Status: DONE
