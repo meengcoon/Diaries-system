@@ -1432,6 +1432,69 @@ Stop conditions:
 - Stop if execution would require touching source files, test files, or docs outside an updated allowed-files list.
 - Register or report follow-up scope work instead of implementing adjacent FastAPI, Health, Quick Capture, desktop, audio, or docs-governance changes.
 
+## BUG-002-SCOPE - Discover FastAPI lifecycle replacement scope
+
+Status: READY
+
+Goal:
+
+Find enough information to turn `BUG-002` into an executable task contract without implementing the FastAPI lifecycle replacement.
+
+Allowed files:
+
+- `docs/TASKS.md` for recording findings, updating `BUG-002-SCOPE`, and updating the `BUG-002` task contract if enough scope is discovered
+- `docs/PROJECT_STATE.md` only if the workflow requires recording stable current project facts
+
+Scope:
+
+- Read-only source and test inspection.
+- Inspect all FastAPI app setup files.
+- Inspect all `@app.on_event` or `.on_event(` usages.
+- Inspect startup and shutdown behavior.
+- Inspect tests that cover server startup, health, routes, app import, and optional-heavy imports.
+- Inspect FastAPI version and dependency constraints in requirements files.
+- Do not implement `BUG-002`.
+- Do not modify source files or test files.
+- Do not push.
+- Do not start Quick Capture, DOCS-008, HEALTH-002, or unrelated work.
+
+Expected findings:
+
+- Exact files containing deprecated `on_event` usage.
+- Whether replacement should use FastAPI lifespan.
+- Allowed implementation files for `BUG-002`.
+- Required tests or new focused tests.
+- Acceptance criteria.
+- Validation commands.
+- Stop or block conditions.
+- Risks around optional audio imports or runtime side effects.
+
+Acceptance:
+
+- If enough scope is discovered, update `BUG-002` from BLOCKED to executable status according to the workflow, including allowed files, acceptance criteria, validation, and stop conditions.
+- If enough scope is not discovered, leave `BUG-002` blocked and record exactly what is missing.
+- `BUG-002-SCOPE` records the discovery findings and final status.
+- No source files, test files, unrelated docs, hook files, or global config are modified, staged, committed, pushed, or deleted.
+
+Validation:
+
+```bash
+git diff --check
+git diff --cached --name-only
+git diff --cached --check
+```
+
+Suggested commit message if executing and updating docs:
+
+`docs: scope fastapi lifecycle replacement`
+
+Stop conditions:
+
+- Stop after registering this task if it did not already exist.
+- Stop if inspection shows implementation is required to answer the scope question.
+- Stop if scope discovery would require source or test edits.
+- Stop if the findings require a broader architectural decision than replacing deprecated FastAPI lifecycle registration.
+
 ## HEALTH-001 - Core Health / Diagnostics API
 
 Status: TODO
