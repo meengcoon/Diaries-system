@@ -3,8 +3,9 @@ from __future__ import annotations
 import logging
 import os
 import sys
+from contextlib import asynccontextmanager
 from pathlib import Path
-from typing import Optional
+from typing import AsyncIterator, Optional
 
 from dotenv import load_dotenv
 from fastapi import FastAPI
@@ -100,7 +101,22 @@ if cascade_import_err:
     logger.warning(f"CascadeBot import failed; chat will be unavailable. err={cascade_import_err}")
 
 
-app = FastAPI(title="Personal Diary AI & English Learning")
+async def _startup_init(_app: FastAPI) -> None:
+    init_db()
+    if _app.state.ingest_entry is None:
+        logger.error(
+            "ingest 未就绪：/api/diary/save 将不可用。"
+            f"import_err={_app.state.ingest_import_err}"
+        )
+
+
+@asynccontextmanager
+async def _lifespan(_app: FastAPI) -> AsyncIterator[None]:
+    await _startup_init(_app)
+    yield
+
+
+app = FastAPI(title="Personal Diary AI & English Learning", lifespan=_lifespan)
 
 # Share globals with route modules via app.state
 app.state.bot = bot
@@ -121,16 +137,6 @@ except Exception as e:
     app.state.ingest_entry = None
     app.state.InputError = Exception
     app.state.ingest_import_err = f"{type(e).__name__}: {e}"
-
-
-@app.on_event("startup")
-async def _startup_init():
-    init_db()
-    if app.state.ingest_entry is None:
-        logger.error(
-            "ingest 未就绪：/api/diary/save 将不可用。"
-            f"import_err={app.state.ingest_import_err}"
-        )
 
 
 def _configure_cors(_app: FastAPI) -> None:

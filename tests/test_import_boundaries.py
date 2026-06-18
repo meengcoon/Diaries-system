@@ -10,7 +10,7 @@ import sys
 import api.routes_diary
 import server
 loaded = set(sys.modules)
-for name in ("pipeline.audio_features", "services.audio_ingest_service", "numpy"):
+for name in ("pipeline.audio_features", "services.audio_ingest_service", "numpy", "faster_whisper"):
     if name in loaded:
         raise SystemExit(f"unexpected import: {name}")
 print("ok")

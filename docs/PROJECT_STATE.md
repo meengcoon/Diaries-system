@@ -12,7 +12,8 @@ Stabilization and observability before new feature expansion.
 
 ## Latest Known Validation
 
-- `.venv/bin/python -m pytest -q` -> 43 passed, 2 warnings in 117.71s during REPO-009 diagnosis
+- `.venv/bin/python -m pytest -q` -> 45 passed in 1.87s during BUG-002
+- `rg -n "@app\.on_event|\.on_event\(" server.py api tests` absence check -> passed during BUG-002
 - `PATH="$PWD/.venv/bin:$PATH" PYTHONPATH=. pytest -q` -> 43 passed, 2 warnings in 1.59s during REPO-009 diagnosis
 - `.venv/bin/python -m compileall -q api services pipeline storage bot llm workers scripts server.py block_analyze.py desktop_app.py` -> passed with `Can't list 'desktop_app.py'` because the optional desktop launcher is absent
 
@@ -46,6 +47,7 @@ save -> blocks -> jobs -> worker -> rollup -> FTS -> context_pack/chat
 - Fake-provider E2E added.
 - Extreme input tests added.
 - Core Health / Diagnostics API added.
+- FastAPI lifespan startup replaces deprecated `on_event` usage.
 
 ## Known Risks
 
@@ -53,7 +55,6 @@ save -> blocks -> jobs -> worker -> rollup -> FTS -> context_pack/chat
 - `.venv` is the recommended development environment and currently validates the project.
 - The configured global pre-push hook runs plain `pytest -q`; without a project environment override it resolves outside `.venv` and fails before a push.
 - System Python may not have the project test dependencies installed.
-- FastAPI `on_event` deprecation warning remains.
 - Health / Diagnostics frontend panel not implemented.
 - Quick Capture desktop companion not implemented.
 - Image attachment ingest not implemented.

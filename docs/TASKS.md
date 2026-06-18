@@ -1383,7 +1383,13 @@ git diff --check
 
 ## BUG-002 - Replace deprecated FastAPI on_event usage
 
-Status: READY
+Status: DONE
+
+Completed evidence:
+
+- `server.py` now uses FastAPI lifespan startup instead of deprecated `@app.on_event("startup")`.
+- Focused lifespan tests cover database initialization and ingest-unavailable startup logging.
+- Import-boundary, health, route behavior, full pytest, and compileall validation passed.
 
 Scoped by:
 
