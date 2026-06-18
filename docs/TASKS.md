@@ -1381,6 +1381,57 @@ git diff --cached --check
 git diff --check
 ```
 
+## BUG-002 - Replace deprecated FastAPI on_event usage
+
+Status: BLOCKED
+
+Blocked reason:
+
+- Existing docs only identify the high-level issue: FastAPI `on_event` deprecation remains.
+- Missing concrete bug description that identifies the affected lifecycle behavior and required compatibility behavior.
+- Missing allowed implementation files.
+- Missing acceptance criteria.
+- Missing validation requirements specific to this bugfix.
+
+Purpose:
+
+Resolve the remaining FastAPI `on_event` deprecation warning without changing API behavior, startup behavior, optional-module boundaries, or the core diary chain.
+
+Allowed files:
+
+- `docs/TASKS.md` only for future scope clarification while this task remains BLOCKED.
+- Implementation files are not defined yet.
+
+Scope:
+
+- Do not execute implementation while this task is BLOCKED.
+- A future scope-definition pass must define the allowed implementation files, acceptance criteria, and validation before any source or test files are modified.
+- Keep this separate from Health frontend, Quick Capture, DOCS-008, desktop, audio, and unrelated implementation work.
+
+Acceptance:
+
+- This task remains blocked until the missing scope contract is filled in `docs/TASKS.md`.
+- The future executable task contract must define concrete allowed files, expected behavior, required tests or regression coverage, and validation commands.
+- No source files, test files, or unrelated docs are modified as part of this registration.
+
+Validation:
+
+- BLOCKED until task-specific validation requirements are defined.
+- For future scope-only edits, use:
+
+```bash
+git diff --check
+git diff --cached --name-only
+git diff --cached --check
+rg -n "(^## BUG-002\b|\bBUG-002\b)" docs/TASKS.md docs/PROJECT_STATE.md docs/WORKFLOW.md
+```
+
+Stop conditions:
+
+- Stop if asked to execute BUG-002 while it remains BLOCKED.
+- Stop if execution would require touching source files, test files, or docs outside an updated allowed-files list.
+- Register or report follow-up scope work instead of implementing adjacent FastAPI, Health, Quick Capture, desktop, audio, or docs-governance changes.
+
 ## HEALTH-001 - Core Health / Diagnostics API
 
 Status: TODO
