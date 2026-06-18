@@ -724,7 +724,11 @@ git diff --cached --check
 
 ## REPO-005 - Investigate existing source and test dirty changes
 
-Status: READY
+Status: DONE
+
+Completed evidence:
+
+- Completed earlier as `AUDIT_COMPLETE_READ_ONLY`.
 
 Goal:
 
@@ -794,7 +798,11 @@ git diff --cached --name-only
 
 ## REPO-006 - Commit REPO-005 task bookkeeping
 
-Status: READY
+Status: DONE
+
+Completed evidence:
+
+- Completed by commit `3309a6a docs: record REPO-005 audit task`.
 
 Goal:
 
