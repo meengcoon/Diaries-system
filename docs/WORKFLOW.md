@@ -19,9 +19,10 @@ It prevents prompt drift, accidental task invention, broad edits, unsafe staging
 
 ## Non-negotiable rule
 
-Do not execute or invent tasks that are not listed in `docs/TASKS.md`.
+Work on exactly one task per run. Do not execute or invent tasks that are not listed in `docs/TASKS.md`.
 
-If a needed task is missing, update `docs/TASKS.md` first in a docs-only task.
+If the intended task is missing, update `docs/TASKS.md` in a docs-only registration pass, then stop with `TASK_REGISTERED_ONLY`.
+Do not combine registration and implementation unless the task explicitly allows it.
 
 ## Task Start Gate
 
@@ -31,6 +32,7 @@ A task can begin only if:
 - The selected task ID is explicit.
 - The task has a goal, allowed files, acceptance criteria, and validation.
 - Dependencies are satisfied, or the user explicitly chooses to work on a blocked task for diagnosis only.
+- `git status --short` has been inspected and unrelated dirty or untracked files are treated as protected existing state.
 
 If any of these are missing, stop and update `docs/TASKS.md` first in a docs-only task.
 
@@ -41,10 +43,10 @@ A task is complete only when:
 - All acceptance criteria for the selected task are satisfied, or a blocker is clearly reported.
 - All required validation commands have passed, or skipped checks are explicitly justified.
 - Changed files are limited to the allowed files.
-- No unrelated dirty files were touched.
+- No unrelated dirty or untracked files were touched, staged, or committed.
 - Nothing is staged unless the task explicitly requires staging or committing.
-- If the task requires a commit, the commit contains only the allowed files and the commit hash is reported.
-- The final report includes changed files, checks run, results, risks, and blockers.
+- If the task requires a commit, the cached diff contains only the allowed files, the commit maps to one task, and the commit hash is reported.
+- The final response uses one of the required labels and includes the required evidence fields.
 
 Once these conditions are met, stop.
 
@@ -55,6 +57,7 @@ Codex must stop immediately and report if:
 - The task is missing from `docs/TASKS.md`.
 - The task lacks allowed files, acceptance criteria, or validation.
 - A required change would touch files outside the allowed list.
+- Completion or validation requires touching files outside the selected task scope.
 - Validation fails.
 - A dependency is unmet.
 - There are unexpected staged files.
@@ -80,15 +83,17 @@ Codex must stop immediately and report if:
    - this workflow document
 4. Confirm allowed files.
 5. Run `git status --short`.
-6. Avoid unrelated dirty files.
+6. Treat unrelated dirty or untracked files as protected existing state.
 7. Modify only files allowed by the task.
 8. Add or update tests for bugfixes and behavior changes.
-9. Run validation commands listed in the task.
-10. Report changed files, checks, risks, and skipped checks.
-11. Stage only explicit files.
-12. Commit with a focused message.
-13. Update `docs/PROJECT_STATE.md` only when project facts changed.
-14. Update `docs/TASKS.md` task status after completion.
+9. Run focused validation for the changed behavior before broader validation when both apply.
+10. If validation requires out-of-scope changes, stop as `BLOCKED` and record the blocker instead of widening scope.
+11. Run validation commands listed in the task.
+12. Stage only explicit allowed files or hunks.
+13. Run the required pre-commit diff checks.
+14. Commit with a focused message only when the cached diff is task-scoped.
+15. Update `docs/PROJECT_STATE.md` only when project facts changed.
+16. Update `docs/TASKS.md` task status only when allowed by the task.
 
 ## Prompt discipline
 
@@ -123,9 +128,31 @@ git add <file1> <file2>
 Before committing, always run:
 
 ```bash
+git diff --check
 git diff --cached --name-only
 git diff --cached --check
 ```
+
+`git diff --cached --name-only` must show only files allowed by the selected task.
+
+## Final response labels
+
+Start the final response with exactly one of:
+
+- `PASS_AND_COMMITTED`
+- `TASK_REGISTERED_ONLY`
+- `BLOCKED`
+- `STOPPED`
+
+Final responses must include:
+
+- selected task
+- files modified
+- files staged
+- commit hash if committed
+- validation commands run
+- final git status
+- confirmation that unrelated dirty or untracked files were not touched
 
 ## Validation defaults
 

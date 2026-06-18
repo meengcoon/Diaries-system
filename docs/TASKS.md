@@ -477,7 +477,7 @@ rg -n "DOCS-008|low-token|CURRENT_TASK|large markdown|task capsule" docs/TASKS.m
 
 ## DOCS-009 - Codify Dirty Worktree and Task Boundary Rules
 
-Status: OPEN
+Status: DONE
 
 Goal:
 

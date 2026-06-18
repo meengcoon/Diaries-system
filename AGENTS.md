@@ -11,10 +11,15 @@ save -> blocks -> jobs -> worker -> rollup -> FTS -> context_pack/chat
 ## Hard Rules
 
 - Do not bypass the existing ingest pipeline.
-- Do not execute or invent tasks that are not listed in `docs/TASKS.md`.
-  If a needed task is missing, update `docs/TASKS.md` first in a docs-only task.
+- Inspect `git status --short` before starting any task.
+- Execute exactly one task per run, and only if it is listed in `docs/TASKS.md`.
+  If the intended task is missing, register it in `docs/TASKS.md` only, then stop.
+  Do not combine task registration and implementation unless the task explicitly allows it.
 - Codex must stop after the selected task's acceptance criteria and validation are satisfied.
-  Do not continue polishing docs, broadening scope, or fixing newly discovered issues unless they are required by the selected task. Record new issues as separate tasks in `docs/TASKS.md`.
+  Stop immediately after a successful task commit.
+  Do not continue polishing docs, broadening scope, or fixing adjacent or newly discovered issues unless required by the selected task. Record new issues as separate tasks in `docs/TASKS.md`.
+- Treat unrelated dirty and untracked files as existing project/user state.
+  Do not modify, format, delete, stage, or commit unrelated dirty or untracked files.
 - New entry-like inputs must go through the backend API and the existing ingest, queue, and rollup path.
 - Do not write directly to SQLite from the frontend, desktop app, Quick Capture app, or scripts unless the task explicitly authorizes it.
 - The text diary core must remain usable without audio, STT, numpy, ffmpeg, faster-whisper, or desktop dependencies.
@@ -30,9 +35,10 @@ save -> blocks -> jobs -> worker -> rollup -> FTS -> context_pack/chat
 - Preserve existing API URLs unless a task explicitly authorizes breaking changes.
 - Audio, desktop, Quick Capture, and future plugin-like entry layers must remain optional.
 - Do not perform broad refactors unless the task is explicitly marked as refactor.
-- Do not mix unrelated changes in one commit.
-- Do not use `git add .` or broad staging commands.
-- Do not include unrelated dirty worktree files in changes, staging, or commits.
+- Each commit must correspond to one task and contain only that task's allowed files or hunks.
+- Never use `git add .` or broad staging commands.
+  Stage only explicit files or explicit hunks allowed by the selected task.
+- Before committing, confirm the staged diff contains only task-allowed files with `git diff --cached --name-only` and `git diff --cached --check`.
 
 ## Required Checks
 
@@ -88,4 +94,3 @@ After editing:
   - `feat:`
   - `refactor:`
   - `chore:`
-- Never include unrelated dirty worktree files.
