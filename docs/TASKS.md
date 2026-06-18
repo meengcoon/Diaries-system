@@ -1182,7 +1182,11 @@ git diff --cached --check
 
 ## DESKTOP-001 - Decide whether desktop_app.py belongs in this baseline
 
-Status: READY
+Status: BLOCKED
+
+Blocked reason:
+
+- `desktop_app.py` imports `requests`, but `requests` is not declared in `requirements.txt` or `requirements-dev.txt`, and `.venv/bin/python -c "import desktop_app"` fails with `ModuleNotFoundError: No module named 'requests'`.
 
 Goal:
 
