@@ -175,11 +175,13 @@ _configure_cors(app)
 from api.routes_audio import router as audio_router
 from api.routes_chat import router as chat_router
 from api.routes_diary import router as diary_router
+from api.routes_health import router as health_router
 from api.routes_meta import router as meta_router
 
 app.include_router(meta_router)
 app.include_router(chat_router)
 app.include_router(diary_router)
+app.include_router(health_router)
 app.include_router(audio_router)
 
 

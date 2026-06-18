@@ -12,10 +12,8 @@ Stabilization and observability before new feature expansion.
 
 ## Latest Known Validation
 
-- `python3 -m pytest -q` -> 36 passed
-- `python3 -m compileall -q api services pipeline storage bot llm workers scripts server.py block_analyze.py desktop_app.py` -> passed
-- `.venv/bin/python -m pip --version` -> pip 24.0
-- `.venv/bin/python -m pytest -q` -> 36 passed, 2 warnings
+- `.venv/bin/python -m pytest -q` -> 43 passed, 2 warnings
+- `.venv/bin/python -m compileall -q api services pipeline storage bot llm workers scripts server.py block_analyze.py desktop_app.py` -> passed with `Can't list 'desktop_app.py'` because the optional desktop launcher is absent
 
 ## Core Product Direction
 
@@ -46,6 +44,7 @@ save -> blocks -> jobs -> worker -> rollup -> FTS -> context_pack/chat
 - Full pytest passes.
 - Fake-provider E2E added.
 - Extreme input tests added.
+- Core Health / Diagnostics API added.
 
 ## Known Risks
 
@@ -53,7 +52,7 @@ save -> blocks -> jobs -> worker -> rollup -> FTS -> context_pack/chat
 - `.venv` is the recommended development environment and currently validates the project.
 - System Python may not have `pytest` installed.
 - FastAPI `on_event` deprecation warning remains.
-- Health / Diagnostics page not implemented.
+- Health / Diagnostics frontend panel not implemented.
 - Quick Capture desktop companion not implemented.
 - Image attachment ingest not implemented.
 
