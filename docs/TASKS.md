@@ -1383,7 +1383,15 @@ git diff --check
 
 ## REPO-010 - Stabilize pytest cache behavior for validation
 
-Status: READY
+Status: DONE
+
+Completed evidence:
+
+- Added `pytest.ini` with `addopts = -p no:cacheprovider`.
+- `.venv/bin/python -m pytest -q` completed with 45 passed in 1.52s.
+- `PATH="$PWD/.venv/bin:$PATH" PYTHONPATH=. pytest -q` completed with 45 passed in 1.34s.
+- Explicit no-cache comparison completed with 45 passed in 1.37s.
+- No source files, tests, global hook files, or global git config were modified.
 
 Goal:
 
