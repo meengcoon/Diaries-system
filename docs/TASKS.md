@@ -1557,6 +1557,88 @@ Stop conditions:
 - Stop if the needed edit is outside documentation, configuration, or script validation surfaces.
 - Stop if broad historical cleanup would be required; record that as a separate task instead.
 
+## REPO-012 - Reconcile stale task queue statuses after cleanup
+
+Status: READY
+
+Goal:
+
+Reconcile stale `docs/TASKS.md` statuses, dependency notes, and blocker notes
+after the repository cleanup, Health API, FastAPI lifecycle, pytest stability,
+and compileall cleanup work has been completed and pushed.
+
+Problem:
+
+A read-only task inventory after `REPO-011` found several task rows whose
+statuses or blockers appear stale compared with existing committed evidence.
+The queue should be reconciled before starting `DOCS-008`, `HEALTH-002`, Quick
+Capture, or new implementation work.
+
+Allowed files:
+
+- `docs/TASKS.md`
+- `docs/PROJECT_STATE.md` only if the workflow requires recording current
+  project facts
+
+Scope:
+
+- Use existing committed evidence only; do not invent completion evidence.
+- Reconcile stale statuses or completion evidence for:
+  - `DOCS-002`
+  - `REPO-001`
+  - `REPO-002`
+  - `REPO-003`
+  - `HEALTH-001`
+- Reconcile dependency or blocker notes for:
+  - `DOCS-008`
+  - `HEALTH-002`
+- If evidence proves a task is complete, mark it DONE and reference the commit
+  or evidence.
+- If evidence is insufficient, keep the task open or blocked and record what is
+  missing.
+- If a blocker is stale because its dependency is now done, update only the
+  blocker or dependency note; do not execute the blocked task.
+- Do not modify source files.
+- Do not modify tests.
+- Do not start `DOCS-008`, `HEALTH-002`, Quick Capture, or implementation work.
+- Do not push.
+
+Acceptance:
+
+- `DOCS-002`, `REPO-001`, `REPO-002`, `REPO-003`, and `HEALTH-001` each have a
+  current status supported by recorded committed evidence or an explicit note
+  explaining what evidence is missing.
+- `DOCS-008` blocker/dependency notes reflect whether `REPO-002` is still a real
+  blocker.
+- `HEALTH-002` blocker/dependency notes reflect whether `HEALTH-001` is still a
+  real blocker.
+- No task implementation work is started.
+- No source or test files are changed.
+- Cached diff contains only allowed docs files if a commit is made.
+
+Validation:
+
+```bash
+git diff --check
+git diff --cached --name-only
+git diff --cached --check
+rg -n "(DOCS-002|REPO-001|REPO-002|REPO-003|HEALTH-001|HEALTH-002|DOCS-008|REPO-012)" docs/TASKS.md docs/PROJECT_STATE.md
+```
+
+Suggested commit message if executing:
+
+`docs: reconcile stale task queue statuses`
+
+Stop conditions:
+
+- Stop if reconciliation would require inspecting or modifying source/test
+  behavior beyond committed evidence.
+- Stop if a status cannot be changed without inventing completion evidence.
+- Stop if updating `docs/PROJECT_STATE.md` would introduce wishlist or
+  non-current facts.
+- Record any broader cleanup or implementation need as a separate task instead
+  of expanding this reconciliation.
+
 ## BUG-002 - Replace deprecated FastAPI on_event usage
 
 Status: DONE
