@@ -70,7 +70,13 @@ git diff --cached --check
 
 ## DOCS-002 - Commit Project Control Documents
 
-Status: READY
+Status: DONE
+
+Completed evidence:
+
+- Completed by `2f6dd8b docs: add project control documents`, which committed
+  `AGENTS.md`, `docs/PROJECT_STATE.md`, `docs/TASKS.md`, and
+  `docs/WORKFLOW.md`.
 
 Depends on:
 
@@ -390,11 +396,19 @@ rg -n "\.venv/bin/python -m pytest|\.venv/bin/python -m compileall|DOCS-007|Stat
 
 ## DOCS-008 - Optimize Governance Docs for Low-Token Task Capsules
 
-Status: BLOCKED
+Status: READY
 
 Depends on:
 
 - `REPO-002`
+
+Dependency status:
+
+- Satisfied: `REPO-002` audit findings are recorded in committed task-queue
+  evidence, and the follow-up cleanup chain through `REPO-011` has handled the
+  dirty-worktree buckets that blocked docs-structure work.
+- `REPO-012` only unblocks this task for a future selected run; it did not
+  execute `DOCS-008`.
 
 Goal:
 
@@ -403,12 +417,6 @@ Optimize the current four-file governance system so future Codex runs read less 
 Problem:
 
 The current four-file system controls Codex behavior, but it can still waste tokens if Codex repeatedly reads full markdown files such as `AGENTS.md`, `docs/TASKS.md`, `docs/WORKFLOW.md`, or future logs. The next optimization is not to add more governance documents, but to make the existing system route Codex toward small task capsules and indexed reads.
-
-Do not implement until:
-
-- `REPO-002` has inspected the remaining dirty worktree diffs.
-- The team has decided what to do with existing dirty source/test files.
-- The repo is safe enough for a docs-structure change.
 
 Target design:
 
@@ -517,7 +525,15 @@ rg -n "dirty worktree|unrelated dirty|git add \\.|staged diff|one task|TASK_REGI
 
 ## REPO-001 - Audit Dirty Worktree
 
-Status: READY
+Status: DONE
+
+Completed evidence:
+
+- Committed task-queue evidence in `b2598a6 docs: record repository cleanup
+  tasks` records that `REPO-001` identified dirty and untracked files before
+  `REPO-002` inspected the diffs.
+- Later committed cleanup and validation tasks handled the dirty-worktree
+  buckets before `REPO-012` reconciliation.
 
 Goal:
 
@@ -566,7 +582,15 @@ git diff --cached --name-only
 
 ## REPO-002 - Inspect Dirty Worktree Diffs
 
-Status: READY
+Status: DONE
+
+Completed evidence:
+
+- Committed task-queue evidence records that `REPO-002` identified source/test
+  dirty-change buckets that became `REPO-005` and follow-up tasks.
+- The follow-up chain was committed through `REPO-011`, including task
+  registration, source/test validation commits, optional desktop cleanup,
+  pytest stabilization, and stale compileall cleanup.
 
 Goal:
 
@@ -626,7 +650,12 @@ git diff --cached --name-only
 
 ## REPO-003 - Commit task bookkeeping updates
 
-Status: READY
+Status: DONE
+
+Completed evidence:
+
+- Completed by `b2598a6 docs: record repository cleanup tasks`, which committed
+  only `docs/TASKS.md` for the repository-cleanup task bookkeeping.
 
 Goal:
 
@@ -1559,7 +1588,18 @@ Stop conditions:
 
 ## REPO-012 - Reconcile stale task queue statuses after cleanup
 
-Status: READY
+Status: DONE
+
+Completed evidence:
+
+- Reconciled stale status rows for `DOCS-002`, `REPO-001`, `REPO-002`,
+  `REPO-003`, and `HEALTH-001` using committed evidence only.
+- Updated `DOCS-008` dependency status so the stale `REPO-002` blocker no
+  longer blocks a future selected `DOCS-008` run.
+- Updated `HEALTH-002` dependency status while keeping it blocked because its
+  executable task contract still lacks allowed files and validation.
+- Did not execute `DOCS-008`, `HEALTH-002`, Quick Capture, or implementation
+  work.
 
 Goal:
 
@@ -1793,7 +1833,16 @@ Stop conditions:
 
 ## HEALTH-001 - Core Health / Diagnostics API
 
-Status: TODO
+Status: DONE
+
+Completed evidence:
+
+- Completed by `c80908a feat: expose core diagnostics without loading optional
+  audio`, which added `api/routes_health.py`, wired it in `server.py`, added
+  `tests/test_health.py`, and updated `docs/PROJECT_STATE.md`.
+- Commit evidence records `.venv/bin/python -m pytest -q` passing with 43
+  passed and 2 warnings, plus compileall exiting successfully with the then
+  absent optional `desktop_app.py` note.
 
 Goal:
 
@@ -1839,6 +1888,17 @@ Status: BLOCKED
 Depends on:
 
 - `HEALTH-001`
+
+Dependency status:
+
+- Satisfied by `c80908a feat: expose core diagnostics without loading optional
+  audio`.
+
+Blocked reason:
+
+- Not blocked by `HEALTH-001` anymore.
+- Still not executable as written because this row lacks allowed files and
+  validation; add those in a future task-scoping pass before implementation.
 
 Scope:
 
