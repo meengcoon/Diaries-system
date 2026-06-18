@@ -1228,7 +1228,7 @@ git diff --cached --check
 
 ## DESKTOP-002 - Remove blocked desktop launcher from worktree
 
-Status: READY
+Status: DONE
 
 Goal:
 
