@@ -13,9 +13,41 @@ It prevents prompt drift, accidental task invention, broad edits, unsafe staging
 - `docs/PROJECT_STATE.md`
   Current facts only. Not a wishlist.
 - `docs/TASKS.md`
-  Single source of truth for actionable tasks.
+  Single source of truth for task status and task-capsule links.
 - `docs/WORKFLOW.md`
   Step-by-step operating process.
+
+## Low-Token Read Policy
+
+- Do not dump full markdown files over 200 lines by default.
+- Use `rg`, `sed` line ranges, `head`, or `tail` to read the relevant section.
+- Before reading a large markdown file in full, state why the full read is
+  necessary for the selected task.
+- Prefer the active `CURRENT_TASK.md` capsule and per-task files under
+  `docs/tasks/<TASK_ID>.md` over historical task text in `docs/TASKS.md`.
+- Keep `docs/TASKS.md` as an index: status, dependencies, short goal, and a link
+  to a task capsule when the full contract is long.
+- Keep `docs/PROJECT_STATE.md` factual and current; do not use it as a task log.
+- Keep `docs/WORKFLOW.md` focused on operating process and stop gates.
+- Do not create a work-log system unless a future task explicitly requires it.
+
+## Current Task Capsule
+
+`CURRENT_TASK.md` is an ignored local handoff file for the active task. It may be
+created by a prompt or by the agent before implementation, then left uncommitted.
+
+A compact capsule should include:
+
+- task ID
+- mode
+- read policy
+- objective
+- allowed files
+- forbidden files
+- relevant facts
+- validation commands
+- acceptance criteria
+- final response format
 
 ## Non-negotiable rule
 
@@ -30,7 +62,10 @@ A task can begin only if:
 
 - The task exists in `docs/TASKS.md`.
 - The selected task ID is explicit.
-- The task has a goal, allowed files, acceptance criteria, and validation.
+- The task row or matching task capsule has a goal, allowed files, acceptance
+  criteria, and validation.
+- If a task capsule exists, it matches the selected task ID and does not widen
+  the allowed files in `docs/TASKS.md`.
 - Dependencies are satisfied, or the user explicitly chooses to work on a blocked task for diagnosis only.
 - `git status --short` has been inspected and unrelated dirty or untracked files are treated as protected existing state.
 
@@ -74,12 +109,13 @@ Codex must stop immediately and report if:
 
 ## Standard operating loop
 
-1. Identify the task ID in `docs/TASKS.md`.
+1. Identify the task ID in `docs/TASKS.md` using indexed reads.
 2. Confirm its status is READY, TODO, or explicitly selected by the user.
 3. Read:
    - `AGENTS.md`
    - `docs/PROJECT_STATE.md`
-   - `docs/TASKS.md`
+   - the selected task row in `docs/TASKS.md`
+   - `CURRENT_TASK.md` or `docs/tasks/<TASK_ID>.md` if present
    - this workflow document
 4. Confirm allowed files.
 5. Run `git status --short`.
@@ -104,7 +140,7 @@ They should say:
 ```text
 Work on TASK <TASK-ID> only.
 Read AGENTS.md, docs/PROJECT_STATE.md, docs/TASKS.md, and docs/WORKFLOW.md.
-Use docs/TASKS.md as the source of truth.
+Use docs/TASKS.md as the source of truth and read any matching task capsule.
 Do not modify files outside the task allowed list.
 Do not stage or commit unless explicitly told.
 ```
@@ -218,6 +254,7 @@ Update `docs/TASKS.md` when:
 - adding dependencies
 - marking a task DONE / BLOCKED / WONTFIX
 - splitting a task that is too large
+- adding or updating a link to `docs/tasks/<TASK_ID>.md`
 
 Do not implement a task in the same run if the only requested work was to register that task.
 

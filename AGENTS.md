@@ -66,9 +66,13 @@ For upload/file changes:
 Before editing:
 
 - Read `docs/PROJECT_STATE.md`.
-- Read `docs/TASKS.md`.
+- Read `docs/TASKS.md` as the task queue/index; for large markdown files, use
+  `rg`, `sed` line ranges, `head`, or `tail` instead of full-file dumps unless a
+  full read is necessary and the reason is stated.
 - Before executing implementation or bugfix tasks, read the canonical workflow runbook:
   `docs/WORKFLOW.md`.
+- Prefer `CURRENT_TASK.md` and `docs/tasks/<TASK_ID>.md` for compact active-task
+  context when they exist.
 - Identify the exact task ID.
 - State intended files to touch.
 

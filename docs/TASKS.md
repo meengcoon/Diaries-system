@@ -2,6 +2,10 @@
 
 This is the single task queue. Future Codex runs should work on one task ID at a time.
 
+For low-token runs, treat this file as the task queue/index. Use `rg` or line
+ranges to find the selected task, then read `docs/tasks/<TASK_ID>.md` or an
+ignored `CURRENT_TASK.md` capsule when a task points to one.
+
 ## Status Definitions
 
 - `PARKED`: idea only, do not implement
@@ -396,7 +400,20 @@ rg -n "\.venv/bin/python -m pytest|\.venv/bin/python -m compileall|DOCS-007|Stat
 
 ## DOCS-008 - Optimize Governance Docs for Low-Token Task Capsules
 
-Status: READY
+Status: DONE
+
+Completed evidence:
+
+- Added the low-token markdown read policy to `AGENTS.md` and
+  `docs/WORKFLOW.md`.
+- Defined ignored `CURRENT_TASK.md` active-task capsules.
+- Added `docs/tasks/DOCS-008.md` as the first per-task capsule and kept this row
+  as an index entry.
+- No application source files or tests were changed.
+
+Task capsule:
+
+- `docs/tasks/DOCS-008.md`
 
 Depends on:
 
@@ -413,67 +430,6 @@ Dependency status:
 Goal:
 
 Optimize the current four-file governance system so future Codex runs read less markdown context while preserving task discipline, scope control, validation gates, and stop conditions.
-
-Problem:
-
-The current four-file system controls Codex behavior, but it can still waste tokens if Codex repeatedly reads full markdown files such as `AGENTS.md`, `docs/TASKS.md`, `docs/WORKFLOW.md`, or future logs. The next optimization is not to add more governance documents, but to make the existing system route Codex toward small task capsules and indexed reads.
-
-Target design:
-
-- Keep `AGENTS.md` short and permanent.
-- Add a large markdown read policy:
-  - Do not cat full markdown files over 200 lines.
-  - Use `rg`, `grep`, `sed` line ranges, `head`, or `tail`.
-  - Prefer indexes and task capsules over full historical files.
-  - Before reading a large markdown file, state why it is necessary.
-- Add or define `CURRENT_TASK.md` as the current task capsule.
-- Make `CURRENT_TASK.md` self-contained for the active task:
-  - task ID
-  - mode
-  - read policy
-  - objective
-  - allowed files
-  - forbidden files
-  - relevant facts
-  - commands
-  - acceptance
-  - final response format
-- Keep `docs/TASKS.md` as a task index instead of a growing full task-contract file.
-- Move detailed task contracts into `docs/tasks/<TASK_ID>.md` where appropriate.
-- Keep `docs/PROJECT_STATE.md` as current facts only.
-- Keep `docs/WORKFLOW.md` focused on operating process and stop gates, not task history.
-- Do not create a WORK_LOG system unless the diary project actually needs historical logs later.
-
-Allowed files for the future DOCS-008 execution:
-
-- `AGENTS.md`
-- `docs/TASKS.md`
-- `docs/WORKFLOW.md`
-- `docs/PROJECT_STATE.md` only if facts need updating
-- `CURRENT_TASK.md` if introduced as an ignored task capsule
-- `.gitignore` only if `CURRENT_TASK.md` must be ignored
-- `docs/tasks/<TASK_ID>.md` files if task capsules are introduced
-
-Scope:
-
-- Design and implement the low-token governance layout.
-- Do not modify application code.
-- Do not modify tests.
-- Do not change product behavior.
-- Do not use this task to clean unrelated dirty files.
-
-Acceptance:
-
-- DOCS-008 preserves the four-file governance intent:
-  - `AGENTS.md` = permanent routing and hard rules
-  - `docs/PROJECT_STATE.md` = current facts only
-  - `docs/TASKS.md` = task queue/index
-  - `docs/WORKFLOW.md` = operating process and stop gates
-- Codex has a clear rule to avoid full reads of large markdown files.
-- The active task can be represented as a compact `CURRENT_TASK.md` capsule.
-- `docs/TASKS.md` either remains manageable or points to per-task capsule files.
-- No application code or tests are changed.
-- Future Codex prompts can be short launchers that rely on `CURRENT_TASK.md` and indexed reads.
 
 Validation:
 
