@@ -58,3 +58,4 @@ build/
 
 # Nested/local repos
 Diaries-System/
+.omx/

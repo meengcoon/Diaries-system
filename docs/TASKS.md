@@ -1224,7 +1224,7 @@ git diff --cached --check
 
 ## REPO-008 - Decide .omx ignore policy
 
-Status: READY
+Status: DONE
 
 Goal:
 
