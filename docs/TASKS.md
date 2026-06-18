@@ -1381,6 +1381,89 @@ git diff --cached --check
 git diff --check
 ```
 
+## REPO-010 - Stabilize pytest cache behavior for validation
+
+Status: READY
+
+Goal:
+
+Make project pytest validation stable without requiring every run to remember an
+ad-hoc `PYTEST_ADDOPTS="-p no:cacheprovider"` environment override.
+
+Problem:
+
+After `BUG-002` was completed and pushed, read-only push-block diagnosis found
+that the full test suite passes but normal pytest can hang in this local repo
+environment because of pytest cache provider or session cache behavior.
+
+Observed validation evidence:
+
+- `PATH="$PWD/.venv/bin:$PATH" PYTHONPATH=. pytest -q` timed out.
+- `PYTEST_DISABLE_PLUGIN_AUTOLOAD=1` did not resolve the timeout by itself.
+- `.venv/bin/python -m pytest -q` timed out.
+- `PATH="$PWD/.venv/bin:$PATH" PYTHONPATH=. PYTEST_ADDOPTS="-p no:cacheprovider" pytest -q`
+  completed with 45 passed in 1.50s.
+
+Allowed files:
+
+- `pytest.ini` if creating a pytest configuration file is the minimal stable fix
+- `pyproject.toml` or an equivalent existing pytest configuration file if one
+  already owns pytest configuration
+- `docs/WORKFLOW.md` only if canonical validation commands must be updated
+- `AGENTS.md` only if required validation commands must be updated
+- `docs/TASKS.md` for task status bookkeeping
+- `docs/PROJECT_STATE.md` only if recording stable validation facts or risks
+
+Scope:
+
+- Configure project pytest so the canonical full-suite validation avoids the
+  cache-provider hang.
+- Keep the full test suite running; do not skip, deselect, or weaken tests.
+- Preserve push-compatible validation with project `.venv` and `PYTHONPATH=.`.
+- Do not modify application source files.
+- Do not modify tests unless a validation-only fixture/config change is proven
+  necessary and kept inside this task.
+- Do not modify global hook files or global git config.
+- Do not push.
+- Do not start Quick Capture, DOCS-008, HEALTH-002, BUG-002, or unrelated work.
+
+Acceptance:
+
+- `.venv/bin/python -m pytest -q` completes without hanging and runs the full
+  suite.
+- `PATH="$PWD/.venv/bin:$PATH" PYTHONPATH=. pytest -q` completes without hanging
+  and runs the full suite.
+- The full suite still reports all tests passing.
+- Push-compatible validation remains possible without editing or bypassing the
+  global hook.
+- No source files, unrelated tests, global hook files, global config, or
+  unrelated docs are modified.
+
+Validation:
+
+```bash
+.venv/bin/python -m pytest -q
+PATH="$PWD/.venv/bin:$PATH" PYTHONPATH=. pytest -q
+PATH="$PWD/.venv/bin:$PATH" PYTHONPATH=. PYTEST_ADDOPTS="-p no:cacheprovider" pytest -q
+git diff --check
+git diff --cached --name-only
+git diff --cached --check
+```
+
+Suggested commit message if executing:
+
+`test: disable pytest cache provider for stable validation`
+
+Stop conditions:
+
+- Stop if stable pytest behavior requires source behavior changes.
+- Stop if the only viable fix requires modifying global hook files or global git
+  config.
+- Stop if validation requires skipping or weakening tests.
+- Stop if the fix requires broader test infrastructure changes than pytest
+  cache behavior.
+- Record any broader issue as a separate task instead of expanding this task.
+
 ## BUG-002 - Replace deprecated FastAPI on_event usage
 
 Status: DONE
