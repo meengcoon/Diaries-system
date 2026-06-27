@@ -1635,6 +1635,90 @@ Stop conditions:
 - Record any broader cleanup or implementation need as a separate task instead
   of expanding this reconciliation.
 
+## REPO-013 - Normalize validation entrypoint and hook-safe pytest command
+
+Status: READY
+
+Goal:
+
+Make local validation entrypoints explicit and repeatable so contributors do not
+accidentally run the system or global `pytest` environment instead of the
+project `.venv`.
+
+Problem:
+
+The canonical project command `.venv/bin/python -m pytest -q` can pass, but the
+configured global pre-push hook runs plain `pytest -q`. In this checkout, plain
+`pytest` resolves outside the project `.venv` and can fail before tests run with
+`ModuleNotFoundError: No module named 'storage'`. The audio feature test can also
+look like pytest is stuck during a cold start because importing native optional
+audio dependencies may be slow before the environment is warm.
+
+Allowed files:
+
+- `scripts/validate.sh` if adding a repo-local validation wrapper
+- `README.md` only if documenting the accepted local validation command
+- `docs/WORKFLOW.md` only if updating canonical validation workflow text
+- `docs/PROJECT_STATE.md` only if recording stable current validation facts or
+  risks
+- `docs/TASKS.md` for task status bookkeeping
+
+Scope:
+
+- Add or update a repo-local validation wrapper that runs from the repository
+  root using project `.venv` and `PYTHONPATH=.`.
+- Keep canonical backend/frontend validation equivalent to:
+  - `.venv/bin/python -m pytest -q`
+  - `.venv/bin/python -m compileall -q api services pipeline storage bot llm workers scripts server.py block_analyze.py`
+- Document that contributors should not use bare `pytest -q` in this repo unless
+  `PATH="$PWD/.venv/bin:$PATH" PYTHONPATH=.` is set.
+- Mention the optional audio/native dependency cold-start behavior only as a
+  local validation risk; do not weaken or skip audio tests.
+- Do not modify application source files.
+- Do not modify tests.
+- Do not modify global hook files or global git config.
+- Do not push.
+- Do not start `HEALTH-002`, Quick Capture, desktop, audio behavior changes, or
+  unrelated implementation work.
+
+Acceptance:
+
+- A single repo-local validation entrypoint exists or existing docs clearly name
+  the canonical entrypoint.
+- Hook-safe validation is documented as:
+  `PATH="$PWD/.venv/bin:$PATH" PYTHONPATH=. pytest -q`.
+- Documentation distinguishes the wrong-environment failure from slow optional
+  native dependency cold starts.
+- Full pytest and compileall validation pass through the accepted project
+  environment.
+- No application source files, tests, global hook files, or global git config are
+  modified.
+- Cached diff contains only files allowed by this task if a commit is made.
+
+Validation:
+
+```bash
+git diff --check
+git diff --cached --name-only
+git diff --cached --check
+.venv/bin/python -m pytest -q
+PATH="$PWD/.venv/bin:$PATH" PYTHONPATH=. pytest -q
+.venv/bin/python -m compileall -q api services pipeline storage bot llm workers scripts server.py block_analyze.py
+```
+
+Suggested commit message if executing:
+
+`chore: normalize project validation entrypoint`
+
+Stop conditions:
+
+- Stop if stabilizing validation requires application source changes.
+- Stop if the only viable fix requires modifying global hook files or global git
+  config.
+- Stop if validation requires skipping, deselecting, or weakening tests.
+- Stop if the task would broaden into audio implementation changes, frontend
+  health panel work, Quick Capture, desktop, or push-only publication.
+
 ## BUG-002 - Replace deprecated FastAPI on_event usage
 
 Status: DONE
