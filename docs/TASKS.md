@@ -1843,12 +1843,13 @@ Status: DONE
 
 Completed evidence:
 
-- Defined `HEALTH-002` as frontend-only UI/API integration work against the
-  existing committed health endpoint.
+- Defined `HEALTH-002` as frontend-only UI/API integration work against an
+  existing health endpoint.
 - Recorded exact allowed files, acceptance criteria, validation commands,
   dependency notes, and stop conditions for `HEALTH-002`.
-- Reconciled the prompt wording about `/api/health` with committed docs: current
-  committed docs identify the endpoint as `GET /health`, not `/api/health`.
+- Endpoint details from this pass were later corrected by
+  `HEALTH-002-CONTRACT-FIX`: source and tests identify the diagnostics endpoint
+  as `GET /api/health`; `GET /health` is only the simple meta health endpoint.
 - Updated `HEALTH-002` from `BLOCKED` to `READY` without implementing it.
 - Did not modify source files, test files, Quick Capture, `QC-*`, or
   `DESKTOP-001`.
@@ -1925,9 +1926,105 @@ Stop conditions:
 - Stop if the work would broaden into implementing `HEALTH-002`, Quick Capture,
   any `QC-*` task, or `DESKTOP-001`.
 
+## HEALTH-002-CONTRACT-FIX - Correct health diagnostics panel task contract
+
+Status: DONE
+
+Completed evidence:
+
+- Corrected `HEALTH-002` to consume the existing diagnostics endpoint
+  `GET /api/health`.
+- Kept `GET /health` only as the simple meta health endpoint distinction.
+- Moved the long `HEALTH-002` executable contract into
+  `docs/tasks/HEALTH-002.md`.
+- Kept the `HEALTH-002` row in this file as an index entry with a capsule link.
+- Replaced the broad "fail on any innerHTML" validation with health-panel safety
+  validation that does not fail on existing frontend baseline usage.
+- Did not modify source files, test files, `README.md`, `docs/operations.md`,
+  Quick Capture, any `QC-*` task, or `DESKTOP-001`.
+
+Goal:
+
+Correct the docs-only `HEALTH-002` task contract after review found context
+drift in the endpoint, task-capsule layout, and frontend validation wording.
+Do not implement `HEALTH-002` in this task.
+
+Problem:
+
+The current `HEALTH-002` row says the panel should consume `GET /health`, but
+the actual diagnostics route and tests use `GET /api/health`. The current row
+also keeps a long executable contract in `docs/TASKS.md` after `DOCS-008`
+introduced per-task capsules, and its validation command would fail on existing
+frontend `innerHTML` usage instead of only guarding the health panel change.
+
+Allowed files:
+
+- `docs/TASKS.md`
+- `docs/tasks/HEALTH-002.md`
+- `docs/PROJECT_STATE.md` only if the workflow requires recording current
+  project facts
+
+Scope:
+
+- Correct `HEALTH-002` to consume the existing diagnostics endpoint
+  `GET /api/health`.
+- Keep `GET /health` documented only as the simple meta health endpoint if it is
+  mentioned at all.
+- Move the detailed `HEALTH-002` executable contract into
+  `docs/tasks/HEALTH-002.md`.
+- Keep the `HEALTH-002` row in `docs/TASKS.md` as an index entry with status,
+  dependency, short goal, and task-capsule link.
+- Replace broad "fail on any innerHTML" validation with validation that does not
+  fail on existing frontend baseline usage and still guards against unsafe
+  health-panel rendering.
+- Do not modify source files.
+- Do not modify test files.
+- Do not implement `HEALTH-002`.
+- Do not start Quick Capture or any `QC-*` task.
+- Do not modify `DESKTOP-001`.
+- Do not push.
+
+Acceptance:
+
+- `HEALTH-002` remains or becomes `READY` only with the corrected
+  `GET /api/health` endpoint.
+- `docs/TASKS.md` no longer contains the full long-form `HEALTH-002` contract;
+  it points to `docs/tasks/HEALTH-002.md`.
+- `docs/tasks/HEALTH-002.md` contains the complete allowed files, scope,
+  acceptance criteria, validation commands, stop conditions, and dependency
+  notes.
+- Validation wording no longer rejects all existing `innerHTML` usage in the
+  frontend baseline.
+- No source or test files are changed.
+
+Validation:
+
+```bash
+git diff --check
+git diff --cached --name-only
+git diff --cached --check
+rg -n "(HEALTH-002|HEALTH-002-CONTRACT-FIX|/api/health|GET /health|docs/tasks/HEALTH-002.md|innerHTML)" docs/TASKS.md docs/tasks/HEALTH-002.md docs/PROJECT_STATE.md docs/WORKFLOW.md AGENTS.md
+```
+
+Suggested commit message if executing:
+
+`docs: correct health diagnostics task contract`
+
+Stop conditions:
+
+- Stop after registering this task if it did not already exist.
+- Stop if correcting the contract requires modifying source or test files.
+- Stop if source and test evidence contradict the endpoint correction.
+- Stop if the work would broaden into implementing `HEALTH-002`, Quick Capture,
+  any `QC-*` task, or `DESKTOP-001`.
+
 ## HEALTH-002 - Core Health / Diagnostics Frontend Panel
 
 Status: READY
+
+Task capsule:
+
+- `docs/tasks/HEALTH-002.md`
 
 Depends on:
 
@@ -1937,92 +2034,21 @@ Dependency status:
 
 - Satisfied by `c80908a feat: expose core diagnostics without loading optional
   audio`.
-- Existing committed docs identify the health endpoint as `GET /health`
-  (`README.md` and `docs/operations.md`), not `/api/health`. `HEALTH-002` must
-  consume the committed health endpoint and must not invent or rename a backend
-  route during frontend implementation.
+- Existing source and tests identify the diagnostics endpoint as
+  `GET /api/health`.
+- `GET /health` is the simple meta health endpoint, not the diagnostics panel
+  data source.
 
-Purpose:
+Goal:
 
 Add a small frontend diagnostics panel/page that displays the existing backend
 health summary for local operational visibility.
 
-Task type:
+Scope summary:
 
 - Frontend-only UI/API integration.
-- Consume the existing `GET /health` endpoint from `HEALTH-001`.
-- Do not add, rename, or modify backend health routes.
-- Do not use `/api/health` unless a separate task first updates the documented
-  backend route contract.
-
-Allowed files:
-
-- `frontend/index.html`
-- `frontend/app.js`
-- `frontend/style.css`
-- `tests/test_frontend_health_panel.py` only if needed for static frontend
-  safety or rendering regression coverage
-- `docs/PROJECT_STATE.md` only after successful implementation if recording the
-  completed frontend panel as a current project fact
-
-Scope:
-
-- Add small frontend diagnostics panel/page.
-- Fetch health data from `GET /health`.
-- Display only data already returned by the health endpoint; do not add backend
-  fields in this task.
-- Add loading and error states for health fetch failures.
-- Keep the panel independent of audio, desktop, Quick Capture, and future
-  plugin-like entry layers.
-- Do not write directly to SQLite.
-- Do not run model work from the frontend.
-- Do not change API URLs, request/response payloads, database schema, upload
-  behavior, audio behavior, desktop behavior, or Quick Capture behavior.
-- Do not modify backend source files unless a separate task first changes this
-  contract.
-
-Acceptance:
-
-- Shows DB path.
-- Shows job counts.
-- Shows FTS status.
-- Shows latest rollup.
-- Uses the existing `GET /health` endpoint from `HEALTH-001`.
-- Does not introduce or require `/api/health`.
-- Does not import or require optional audio-heavy modules.
-- Does not touch Quick Capture, `QC-*`, desktop, upload, worker, rollup, chat, or
-  model-provider behavior.
-- Does not render untrusted HTML.
-- Does not use unsafe `innerHTML`, `dangerouslySetInnerHTML`, or raw markdown
-  HTML rendering for health content.
-- Handles loading and fetch-error states.
-- Existing backend validation still passes.
-
-Validation:
-
-```bash
-git diff --check
-git diff --cached --name-only
-git diff --cached --check
-rg -n "fetch\\([^\\n]*(/health|health)|health" frontend/index.html frontend/app.js frontend/style.css
-if rg -n "innerHTML|dangerouslySetInnerHTML|marked\\.parse" frontend/index.html frontend/app.js frontend/style.css; then exit 1; fi
-.venv/bin/python -m pytest -q
-.venv/bin/python -m compileall -q api services pipeline storage bot llm workers scripts server.py block_analyze.py
-```
-
-Stop conditions:
-
-- Stop if the health panel requires backend route changes or new health response
-  fields.
-- Stop if implementation cannot consume the documented `GET /health` endpoint
-  without changing API URLs.
-- Stop if the work requires introducing `/api/health`; record a separate backend
-  route-contract task instead.
-- Stop if validation requires new dependencies or frontend build/test
-  infrastructure that is not already present.
-- Stop if source inspection shows the exact allowed file list is insufficient.
-- Stop if the work would broaden into Quick Capture, any `QC-*` task, desktop,
-  upload/file behavior, audio/STT, worker, rollup, chat, or model-provider work.
+- Consume the existing `GET /api/health` endpoint from `HEALTH-001`.
+- Keep details, validation, and stop conditions in the task capsule.
 
 ## QC-001 - Quick Capture Backend Contract
 
