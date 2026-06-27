@@ -38,10 +38,29 @@
 python3 -m venv .venv
 .venv/bin/python -m pip install -r requirements.txt -r requirements-dev.txt
 .venv/bin/python -m pip --version
-.venv/bin/python -m pytest -q
+scripts/validate.sh
 ```
 
 旧的本地虚拟环境已不再作为推荐环境。
+
+## 验证
+
+标准验证入口是：
+
+```bash
+scripts/validate.sh
+```
+
+这个脚本固定使用项目 `.venv`，并设置仓库根目录为 `PYTHONPATH`，避免系统或 Anaconda 的
+`pytest` 抢先运行。不要在这个仓库里直接裸跑 `pytest -q`。
+
+如果需要模拟全局 pre-push hook 的 plain `pytest -q` 形式，请显式使用项目环境：
+
+```bash
+PATH="$PWD/.venv/bin:$PATH" PYTHONPATH=. pytest -q
+```
+
+第一次运行音频相关测试时，原生可选依赖可能会有冷启动延迟；这不代表测试被跳过或削弱。
 
 ```bash
 .venv/bin/python -m uvicorn server:app --host 127.0.0.1 --port 8000

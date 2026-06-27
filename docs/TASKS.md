@@ -1637,7 +1637,23 @@ Stop conditions:
 
 ## REPO-013 - Normalize validation entrypoint and hook-safe pytest command
 
-Status: READY
+Status: DONE
+
+Completed evidence:
+
+- Added `scripts/validate.sh` as the repo-local validation entrypoint.
+- Documented `scripts/validate.sh` and the hook-safe
+  `PATH="$PWD/.venv/bin:$PATH" PYTHONPATH=. pytest -q` command.
+- Documented the distinction between wrong-environment bare `pytest` failures
+  and optional native dependency cold-start delays.
+- `scripts/validate.sh` completed with pytest passing and compileall passing.
+- `.venv/bin/python -m pytest -q` completed with 48 passed in 1.53s.
+- `PATH="$PWD/.venv/bin:$PATH" PYTHONPATH=. pytest -q` completed with 48 passed
+  in 1.53s.
+- `.venv/bin/python -m compileall -q api services pipeline storage bot llm workers scripts server.py block_analyze.py`
+  passed.
+- No application source files, tests, global hook files, or global git config
+  were modified.
 
 Goal:
 

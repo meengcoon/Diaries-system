@@ -195,9 +195,28 @@ Final responses must include:
 For normal backend/frontend changes:
 
 ```bash
+scripts/validate.sh
+```
+
+The wrapper runs the canonical checks from the repository root with the project
+`.venv` and `PYTHONPATH=.`:
+
+```bash
 .venv/bin/python -m pytest -q
 .venv/bin/python -m compileall -q api services pipeline storage bot llm workers scripts server.py block_analyze.py
 ```
+
+Do not run bare `pytest -q` in this repository unless the project environment is
+made explicit:
+
+```bash
+PATH="$PWD/.venv/bin:$PATH" PYTHONPATH=. pytest -q
+```
+
+Plain `pytest -q` can resolve outside `.venv` under global hooks or shell
+configuration and fail before project imports load. A first run can also appear
+slow while optional native audio dependencies cold-start; do not skip or weaken
+those tests to mask the delay.
 
 For import-boundary changes:
 
