@@ -1837,9 +1837,97 @@ Validation:
 .venv/bin/python -m compileall -q api services pipeline storage bot llm workers scripts server.py block_analyze.py desktop_app.py
 ```
 
+## HEALTH-002-SCOPE - Define health diagnostics panel task contract
+
+Status: DONE
+
+Completed evidence:
+
+- Defined `HEALTH-002` as frontend-only UI/API integration work against the
+  existing committed health endpoint.
+- Recorded exact allowed files, acceptance criteria, validation commands,
+  dependency notes, and stop conditions for `HEALTH-002`.
+- Reconciled the prompt wording about `/api/health` with committed docs: current
+  committed docs identify the endpoint as `GET /health`, not `/api/health`.
+- Updated `HEALTH-002` from `BLOCKED` to `READY` without implementing it.
+- Did not modify source files, test files, Quick Capture, `QC-*`, or
+  `DESKTOP-001`.
+
+Goal:
+
+Define `HEALTH-002` as an exact executable task contract using only committed
+facts and docs. Do not implement `HEALTH-002` in this task.
+
+Allowed files:
+
+- `docs/TASKS.md`
+- `docs/PROJECT_STATE.md` only if the workflow requires recording current
+  project facts
+
+Scope:
+
+- Define whether `HEALTH-002` is backend-only, frontend-only, or UI/API
+  integration work.
+- Define exact allowed files for `HEALTH-002`.
+- Define acceptance criteria for the health diagnostics panel.
+- Define validation commands for `HEALTH-002`.
+- Define stop or block conditions for `HEALTH-002`.
+- Record dependency notes using existing committed facts only.
+- Record whether `HEALTH-002` must consume the existing `/api/health` endpoint
+  from `HEALTH-001`.
+- Record how `HEALTH-002` must avoid optional audio-heavy imports and unrelated
+  feature work.
+- Do not modify source files.
+- Do not modify test files.
+- Do not start `HEALTH-002`.
+- Do not start Quick Capture or any `QC-*` task.
+- Do not modify `DESKTOP-001`.
+- Do not push.
+
+Acceptance:
+
+- `HEALTH-002-SCOPE` is present in `docs/TASKS.md` with status `DONE`.
+- The future `HEALTH-002` task contract has status, purpose, exact allowed
+  files/scope, acceptance criteria, validation commands, stop/block conditions,
+  and dependency notes.
+- The contract records whether `HEALTH-002` is backend-only, frontend-only, or
+  UI/API integration work.
+- The contract records whether `HEALTH-002` must consume the existing
+  `/api/health` endpoint from `HEALTH-001`.
+- The contract records how `HEALTH-002` must avoid optional audio-heavy imports
+  and unrelated feature work.
+- If existing docs are insufficient to define the contract, `HEALTH-002` remains
+  blocked and the missing information is recorded exactly.
+- If existing docs are sufficient, `HEALTH-002` is updated from `BLOCKED` to
+  `READY`.
+- No source or test files are changed.
+
+Validation:
+
+```bash
+git diff --check
+git diff --cached --name-only
+git diff --cached --check
+rg -n "(HEALTH-002|HEALTH-002-SCOPE|QC-001|DOCS-008|/api/health|health)" docs/TASKS.md docs/PROJECT_STATE.md docs/WORKFLOW.md AGENTS.md
+```
+
+Suggested commit message if executing:
+
+`docs: define health diagnostics task contract`
+
+Stop conditions:
+
+- Stop after registering this task if it did not already exist.
+- Stop if defining the `HEALTH-002` contract would require source or test
+  inspection beyond committed docs.
+- Stop if the docs do not contain enough information to define the executable
+  contract.
+- Stop if the work would broaden into implementing `HEALTH-002`, Quick Capture,
+  any `QC-*` task, or `DESKTOP-001`.
+
 ## HEALTH-002 - Core Health / Diagnostics Frontend Panel
 
-Status: BLOCKED
+Status: READY
 
 Depends on:
 
@@ -1849,16 +1937,49 @@ Dependency status:
 
 - Satisfied by `c80908a feat: expose core diagnostics without loading optional
   audio`.
+- Existing committed docs identify the health endpoint as `GET /health`
+  (`README.md` and `docs/operations.md`), not `/api/health`. `HEALTH-002` must
+  consume the committed health endpoint and must not invent or rename a backend
+  route during frontend implementation.
 
-Blocked reason:
+Purpose:
 
-- Not blocked by `HEALTH-001` anymore.
-- Still not executable as written because this row lacks allowed files and
-  validation; add those in a future task-scoping pass before implementation.
+Add a small frontend diagnostics panel/page that displays the existing backend
+health summary for local operational visibility.
+
+Task type:
+
+- Frontend-only UI/API integration.
+- Consume the existing `GET /health` endpoint from `HEALTH-001`.
+- Do not add, rename, or modify backend health routes.
+- Do not use `/api/health` unless a separate task first updates the documented
+  backend route contract.
+
+Allowed files:
+
+- `frontend/index.html`
+- `frontend/app.js`
+- `frontend/style.css`
+- `tests/test_frontend_health_panel.py` only if needed for static frontend
+  safety or rendering regression coverage
+- `docs/PROJECT_STATE.md` only after successful implementation if recording the
+  completed frontend panel as a current project fact
 
 Scope:
 
 - Add small frontend diagnostics panel/page.
+- Fetch health data from `GET /health`.
+- Display only data already returned by the health endpoint; do not add backend
+  fields in this task.
+- Add loading and error states for health fetch failures.
+- Keep the panel independent of audio, desktop, Quick Capture, and future
+  plugin-like entry layers.
+- Do not write directly to SQLite.
+- Do not run model work from the frontend.
+- Do not change API URLs, request/response payloads, database schema, upload
+  behavior, audio behavior, desktop behavior, or Quick Capture behavior.
+- Do not modify backend source files unless a separate task first changes this
+  contract.
 
 Acceptance:
 
@@ -1866,7 +1987,42 @@ Acceptance:
 - Shows job counts.
 - Shows FTS status.
 - Shows latest rollup.
+- Uses the existing `GET /health` endpoint from `HEALTH-001`.
+- Does not introduce or require `/api/health`.
+- Does not import or require optional audio-heavy modules.
+- Does not touch Quick Capture, `QC-*`, desktop, upload, worker, rollup, chat, or
+  model-provider behavior.
 - Does not render untrusted HTML.
+- Does not use unsafe `innerHTML`, `dangerouslySetInnerHTML`, or raw markdown
+  HTML rendering for health content.
+- Handles loading and fetch-error states.
+- Existing backend validation still passes.
+
+Validation:
+
+```bash
+git diff --check
+git diff --cached --name-only
+git diff --cached --check
+rg -n "fetch\\([^\\n]*(/health|health)|health" frontend/index.html frontend/app.js frontend/style.css
+if rg -n "innerHTML|dangerouslySetInnerHTML|marked\\.parse" frontend/index.html frontend/app.js frontend/style.css; then exit 1; fi
+.venv/bin/python -m pytest -q
+.venv/bin/python -m compileall -q api services pipeline storage bot llm workers scripts server.py block_analyze.py
+```
+
+Stop conditions:
+
+- Stop if the health panel requires backend route changes or new health response
+  fields.
+- Stop if implementation cannot consume the documented `GET /health` endpoint
+  without changing API URLs.
+- Stop if the work requires introducing `/api/health`; record a separate backend
+  route-contract task instead.
+- Stop if validation requires new dependencies or frontend build/test
+  infrastructure that is not already present.
+- Stop if source inspection shows the exact allowed file list is insufficient.
+- Stop if the work would broaden into Quick Capture, any `QC-*` task, desktop,
+  upload/file behavior, audio/STT, worker, rollup, chat, or model-provider work.
 
 ## QC-001 - Quick Capture Backend Contract
 
