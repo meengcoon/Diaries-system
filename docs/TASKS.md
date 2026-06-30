@@ -2151,6 +2151,28 @@ Scope summary:
 - Consume the existing `GET /api/health` endpoint from `HEALTH-001`.
 - Keep details, validation, and stop conditions in the task capsule.
 
+## HEALTH-002-CLOSEOUT-CONTRACT-FIX - Correct health closeout scope
+
+Status: READY
+
+Goal: repair the `HEALTH-002-CLOSEOUT` allowed-file scope so the closeout can
+also update the legacy `docs/tasks/HEALTH-002.md` capsule status.
+
+Task directory: `docs/tasks/HEALTH-002-CLOSEOUT-CONTRACT-FIX/`
+
+Allowed files: `docs/TASKS.md`
+
+Acceptance: update only the `HEALTH-002-CLOSEOUT` task contract in this index
+so its allowed files include `docs/tasks/HEALTH-002.md`; do not execute
+`HEALTH-002-CLOSEOUT`.
+
+Validation: `git diff --check`; focused `rg` for
+`HEALTH-002-CLOSEOUT-CONTRACT-FIX`, `HEALTH-002-CLOSEOUT`, and
+`docs/tasks/HEALTH-002.md`; `git diff --cached --name-only`;
+`git diff --cached --check`.
+
+Stop: register only if missing; stop after fixing the contract in the next run.
+
 ## HEALTH-002-CLOSEOUT - Reconcile completed health panel task status
 
 Status: READY
