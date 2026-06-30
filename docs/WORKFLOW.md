@@ -13,7 +13,7 @@ It prevents prompt drift, accidental task invention, broad edits, unsafe staging
 - `docs/PROJECT_STATE.md`
   Current facts only. Not a wishlist.
 - `docs/TASKS.md`
-  Single source of truth for task status and task-capsule links.
+  Single source of truth for task status and task-directory or capsule links.
 - `docs/WORKFLOW.md`
   Step-by-step operating process.
 
@@ -23,10 +23,11 @@ It prevents prompt drift, accidental task invention, broad edits, unsafe staging
 - Use `rg`, `sed` line ranges, `head`, or `tail` to read the relevant section.
 - Before reading a large markdown file in full, state why the full read is
   necessary for the selected task.
-- Prefer the active `CURRENT_TASK.md` capsule and per-task files under
-  `docs/tasks/<TASK_ID>.md` over historical task text in `docs/TASKS.md`.
+- Prefer the active `CURRENT_TASK.md` scratch file and task directories under
+  `docs/tasks/<TASK_ID>/` over historical task text in `docs/TASKS.md`.
+  Existing `docs/tasks/<TASK_ID>.md` files are legacy-compatible capsules.
 - Keep `docs/TASKS.md` as an index: status, dependencies, short goal, and a link
-  to a task capsule when the full contract is long.
+  to a task directory or legacy capsule when the full contract is long.
 - Keep `docs/PROJECT_STATE.md` factual and current; do not use it as a task log.
 - Keep `docs/WORKFLOW.md` focused on operating process and stop gates.
 - Do not create a work-log system unless a future task explicitly requires it.
@@ -49,6 +50,33 @@ A compact capsule should include:
 - acceptance criteria
 - final response format
 
+## Task Directory Model
+
+New detailed tasks should use a directory under `docs/tasks/<TASK_ID>/`.
+`docs/TASKS.md` should stay an index and store only task ID, status,
+dependencies, short goal, task directory path, and key document paths.
+
+Use numbered task documents to keep the reading order explicit:
+
+- `001-contract.md` for objective, allowed files, acceptance, validation, and
+  stop conditions.
+- `00N-docs-governance.md` for documentation and file-placement decisions.
+- `00N-code-feature.md` for feature design notes when a code task needs them.
+- `00N-optimization.md` for cleanup, compaction, performance, or quality work.
+- `00N-validation.md` for validation evidence and completion checks.
+- `00N-archive.md` or `00N-history.md` for archive/history decisions.
+
+Split task documents before they become hard to scan:
+
+- 500 lines is the soft split trigger.
+- 1000 lines is the hard limit for one task document unless a future task
+  records why splitting would damage the record.
+- When a document is split, add the new numbered path to `docs/TASKS.md` or to
+  `001-contract.md`.
+
+Existing `docs/tasks/<TASK_ID>.md` files remain valid legacy capsules. Do not
+migrate or split them unless a separate task explicitly authorizes that work.
+
 ## Non-negotiable rule
 
 Work on exactly one task per run. Do not execute or invent tasks that are not listed in `docs/TASKS.md`.
@@ -62,10 +90,10 @@ A task can begin only if:
 
 - The task exists in `docs/TASKS.md`.
 - The selected task ID is explicit.
-- The task row or matching task capsule has a goal, allowed files, acceptance
-  criteria, and validation.
-- If a task capsule exists, it matches the selected task ID and does not widen
-  the allowed files in `docs/TASKS.md`.
+- The task row or matching task directory or legacy capsule has a goal, allowed
+  files, acceptance criteria, and validation.
+- If a task directory or capsule exists, it matches the selected task ID and
+  does not widen the allowed files in `docs/TASKS.md`.
 - Dependencies are satisfied, or the user explicitly chooses to work on a blocked task for diagnosis only.
 - `git status --short` has been inspected and unrelated dirty or untracked files are treated as protected existing state.
 
@@ -115,7 +143,8 @@ Codex must stop immediately and report if:
    - `AGENTS.md`
    - `docs/PROJECT_STATE.md`
    - the selected task row in `docs/TASKS.md`
-   - `CURRENT_TASK.md` or `docs/tasks/<TASK_ID>.md` if present
+   - `CURRENT_TASK.md`, `docs/tasks/<TASK_ID>/`, or legacy
+     `docs/tasks/<TASK_ID>.md` if present
    - this workflow document
 4. Confirm allowed files.
 5. Run `git status --short`.
@@ -140,7 +169,8 @@ They should say:
 ```text
 Work on TASK <TASK-ID> only.
 Read AGENTS.md, docs/PROJECT_STATE.md, docs/TASKS.md, and docs/WORKFLOW.md.
-Use docs/TASKS.md as the source of truth and read any matching task capsule.
+Use docs/TASKS.md as the source of truth and read any matching task directory or
+legacy capsule.
 Do not modify files outside the task allowed list.
 Do not stage or commit unless explicitly told.
 ```
@@ -239,16 +269,17 @@ Test size limits, MIME validation, and rejected files not being persisted.
 5. BUG-002 - Replace deprecated FastAPI on_event usage.
 6. HEALTH-001 - Core Health / Diagnostics API.
 7. HEALTH-002 - Core Health / Diagnostics frontend panel.
-8. QC-001 - Quick Capture backend contract.
-9. QC-002 - Quick Capture text-only backend endpoint.
-10. QC-002B - Verify Quick Capture participates in core chain.
-11. ATTACH-001 - Design image attachment storage.
-12. ATTACH-002 - Add image attachment persistence.
-13. ATTACH-003 - Add safe image attachment ingest.
-14. QC-003 - Add image support to quick capture endpoint.
-15. DESKTOP-001 - Confirm Quick Capture desktop approach.
-16. DESKTOP-002 - Add text-only Quick Capture desktop shell.
-17. DESKTOP-003 - Add image input to Quick Capture desktop shell.
+8. FILE-MGMT-001 - Define task directory file management model.
+9. QC-001 - Quick Capture backend contract.
+10. QC-002 - Quick Capture text-only backend endpoint.
+11. QC-002B - Verify Quick Capture participates in core chain.
+12. ATTACH-001 - Design image attachment storage.
+13. ATTACH-002 - Add image attachment persistence.
+14. ATTACH-003 - Add safe image attachment ingest.
+15. QC-003 - Add image support to quick capture endpoint.
+16. DESKTOP-001 - Confirm Quick Capture desktop approach.
+17. DESKTOP-002 - Add text-only Quick Capture desktop shell.
+18. DESKTOP-003 - Add image input to Quick Capture desktop shell.
 
 ## When to update PROJECT_STATE
 
@@ -273,7 +304,8 @@ Update `docs/TASKS.md` when:
 - adding dependencies
 - marking a task DONE / BLOCKED / WONTFIX
 - splitting a task that is too large
-- adding or updating a link to `docs/tasks/<TASK_ID>.md`
+- adding or updating a link to `docs/tasks/<TASK_ID>/` or a legacy
+  `docs/tasks/<TASK_ID>.md` capsule
 
 Do not implement a task in the same run if the only requested work was to register that task.
 

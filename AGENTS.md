@@ -71,8 +71,9 @@ Before editing:
   full read is necessary and the reason is stated.
 - Before executing implementation or bugfix tasks, read the canonical workflow runbook:
   `docs/WORKFLOW.md`.
-- Prefer `CURRENT_TASK.md` and `docs/tasks/<TASK_ID>.md` for compact active-task
-  context when they exist.
+- Prefer `CURRENT_TASK.md` and task directories under `docs/tasks/<TASK_ID>/`
+  for compact active-task context when they exist. Existing
+  `docs/tasks/<TASK_ID>.md` files are legacy-compatible capsules.
 - Identify the exact task ID.
 - State intended files to touch.
 

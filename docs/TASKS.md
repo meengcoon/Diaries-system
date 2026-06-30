@@ -3,8 +3,9 @@
 This is the single task queue. Future Codex runs should work on one task ID at a time.
 
 For low-token runs, treat this file as the task queue/index. Use `rg` or line
-ranges to find the selected task, then read `docs/tasks/<TASK_ID>.md` or an
-ignored `CURRENT_TASK.md` capsule when a task points to one.
+ranges to find the selected task, then read `docs/tasks/<TASK_ID>/`, legacy
+`docs/tasks/<TASK_ID>.md`, or an ignored `CURRENT_TASK.md` scratch file when a
+task points to one.
 
 ## Status Definitions
 
@@ -2152,7 +2153,7 @@ Scope summary:
 
 ## FILE-MGMT-001 - Define task directory file management model
 
-Status: READY
+Status: DONE
 
 Goal: define a task-directory governance model so `docs/TASKS.md` becomes an
 index and task details live in numbered files under `docs/tasks/<TASK_ID>/`.
@@ -2173,6 +2174,10 @@ Acceptance: define the index-vs-directory contract, numbered document categories
 for docs/code-feature/optimization/validation/archive content, and split rules:
 500 lines is the soft split trigger; 1000 lines is the hard limit for one task
 document. Do not migrate historical tasks in this task.
+
+Result: task-directory governance is defined in `AGENTS.md`,
+`docs/WORKFLOW.md`, and the numbered files under
+`docs/tasks/FILE-MGMT-001/`.
 
 Validation: `git diff --check`; `git diff --cached --name-only`;
 `git diff --cached --check`; focused `rg` for the new model terms.
