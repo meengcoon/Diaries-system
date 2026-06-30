@@ -2151,6 +2151,33 @@ Scope summary:
 - Consume the existing `GET /api/health` endpoint from `HEALTH-001`.
 - Keep details, validation, and stop conditions in the task capsule.
 
+## HEALTH-002-CLOSEOUT - Reconcile completed health panel task status
+
+Status: READY
+
+Goal: close the stale `HEALTH-002` task status after the frontend diagnostics
+panel was implemented in `67e3bba` and recorded in `docs/PROJECT_STATE.md`.
+
+Task directory: `docs/tasks/HEALTH-002-CLOSEOUT/`
+
+Key docs to create during execution:
+
+- `docs/tasks/HEALTH-002-CLOSEOUT/001-contract.md`
+- `docs/tasks/HEALTH-002-CLOSEOUT/002-validation.md`
+
+Allowed files: `docs/TASKS.md`, `docs/tasks/HEALTH-002-CLOSEOUT/`
+
+Acceptance: mark `HEALTH-002` as `DONE` using committed evidence only, preserve
+its capsule link, record `67e3bba` as the implementation evidence, and avoid
+source/test/frontend/runtime changes.
+
+Validation: `git diff --check`; focused `rg` for `HEALTH-002`,
+`HEALTH-002-CLOSEOUT`, `67e3bba`, and `Status: DONE`; `git diff --cached
+--name-only`; `git diff --cached --check`.
+
+Stop: register only if missing; stop if source/test/runtime inspection or
+changes become necessary beyond committed evidence.
+
 ## FILE-MGMT-001 - Define task directory file management model
 
 Status: DONE
