@@ -2153,7 +2153,7 @@ Scope summary:
 
 ## HEALTH-002-CLOSEOUT-CONTRACT-FIX - Correct health closeout scope
 
-Status: READY
+Status: DONE
 
 Goal: repair the `HEALTH-002-CLOSEOUT` allowed-file scope so the closeout can
 also update the legacy `docs/tasks/HEALTH-002.md` capsule status.
@@ -2165,6 +2165,9 @@ Allowed files: `docs/TASKS.md`
 Acceptance: update only the `HEALTH-002-CLOSEOUT` task contract in this index
 so its allowed files include `docs/tasks/HEALTH-002.md`; do not execute
 `HEALTH-002-CLOSEOUT`.
+
+Result: `HEALTH-002-CLOSEOUT` now includes `docs/tasks/HEALTH-002.md` in its
+allowed files so the next task can reconcile the legacy capsule status.
 
 Validation: `git diff --check`; focused `rg` for
 `HEALTH-002-CLOSEOUT-CONTRACT-FIX`, `HEALTH-002-CLOSEOUT`, and
@@ -2187,7 +2190,8 @@ Key docs to create during execution:
 - `docs/tasks/HEALTH-002-CLOSEOUT/001-contract.md`
 - `docs/tasks/HEALTH-002-CLOSEOUT/002-validation.md`
 
-Allowed files: `docs/TASKS.md`, `docs/tasks/HEALTH-002-CLOSEOUT/`
+Allowed files: `docs/TASKS.md`, `docs/tasks/HEALTH-002.md`,
+`docs/tasks/HEALTH-002-CLOSEOUT/`
 
 Acceptance: mark `HEALTH-002` as `DONE` using committed evidence only, preserve
 its capsule link, record `67e3bba` as the implementation evidence, and avoid
