@@ -12,6 +12,9 @@ Stabilization and observability before new feature expansion.
 
 ## Latest Known Validation
 
+- `scripts/validate.sh` -> pytest 48 passed and compileall passed during HEALTH-002
+- `.venv/bin/python -m pytest -q tests/test_frontend_security.py tests/test_frontend_health_panel.py` -> 4 passed during HEALTH-002
+- `.venv/bin/python -m compileall -q api services pipeline storage bot llm workers scripts server.py block_analyze.py` -> passed during HEALTH-002
 - `scripts/validate.sh` -> pytest 48 passed in 1.54s and compileall passed during REPO-013
 - `.venv/bin/python -m pytest -q` -> 48 passed in 1.53s during REPO-013
 - `PATH="$PWD/.venv/bin:$PATH" PYTHONPATH=. pytest -q` -> 48 passed in 1.53s during REPO-013
@@ -51,6 +54,7 @@ save -> blocks -> jobs -> worker -> rollup -> FTS -> context_pack/chat
 - Fake-provider E2E added.
 - Extreme input tests added.
 - Core Health / Diagnostics API added.
+- Health / Diagnostics frontend panel added.
 - FastAPI lifespan startup replaces deprecated `on_event` usage.
 - Pytest cache provider disabled in project config for stable validation.
 - Stale optional `desktop_app.py` target removed from canonical compileall validation.
@@ -65,7 +69,6 @@ save -> blocks -> jobs -> worker -> rollup -> FTS -> context_pack/chat
 - Project pytest no longer requires an ad-hoc `PYTEST_ADDOPTS="-p no:cacheprovider"` override because `pytest.ini` disables the cache provider.
 - System Python may not have the project test dependencies installed.
 - Optional native audio dependencies can make the first pytest run look slow during cold start.
-- Health / Diagnostics frontend panel not implemented.
 - Quick Capture desktop companion not implemented.
 - Image attachment ingest not implemented.
 

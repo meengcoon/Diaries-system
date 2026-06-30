@@ -156,6 +156,44 @@
             <div id="focus-lines" class="topic-list">暂无</div>
           </div>
         </div>
+
+        <section class="health-panel" aria-labelledby="health-panel-title">
+          <div class="health-panel-head">
+            <div>
+              <h3 id="health-panel-title">Health / Diagnostics</h3>
+              <div id="health-updated" class="health-subtitle">诊断加载中...</div>
+            </div>
+            <span id="health-status-chip" class="health-status-chip idle">检查中</span>
+          </div>
+          <div id="health-error" class="health-error hidden"></div>
+          <div class="health-grid">
+            <div class="health-box">
+              <div class="result-title">数据库</div>
+              <div id="health-db-path" class="health-detail">-</div>
+              <div id="health-db-counts" class="health-meta">entries - · blocks -</div>
+            </div>
+            <div class="health-box">
+              <div class="result-title">分析任务</div>
+              <div id="health-jobs" class="health-detail">-</div>
+              <div id="health-jobs-detail" class="health-meta">pending - · running - · failed -</div>
+            </div>
+            <div class="health-box">
+              <div class="result-title">FTS</div>
+              <div id="health-fts" class="health-detail">-</div>
+              <div id="health-fts-detail" class="health-meta">table -</div>
+            </div>
+            <div class="health-box">
+              <div class="result-title">Latest Rollup</div>
+              <div id="health-rollup" class="health-detail">-</div>
+              <div id="health-rollup-detail" class="health-meta">暂无 rollup</div>
+            </div>
+            <div class="health-box health-box-wide">
+              <div class="result-title">Context Pack</div>
+              <div id="health-context-pack" class="health-detail">-</div>
+              <div id="health-context-pack-detail" class="health-meta">schema -</div>
+            </div>
+          </div>
+        </section>
       </section>
     </main>
   </div>

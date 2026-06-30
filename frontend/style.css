@@ -1144,6 +1144,98 @@ textarea:focus {
   gap: 10px;
 }
 
+.health-panel {
+  margin-top: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.86);
+  border-radius: var(--radius-lg);
+  background: rgba(255, 255, 255, 0.62);
+  box-shadow: var(--shadow-soft), inset 0 1px 0 rgba(255, 255, 255, 0.9);
+  padding: 12px;
+  backdrop-filter: blur(12px);
+}
+
+.health-panel-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 10px;
+  margin-bottom: 10px;
+}
+
+.health-subtitle {
+  margin-top: 4px;
+  color: var(--text-soft);
+  font-size: 12px;
+}
+
+.health-status-chip {
+  flex: 0 0 auto;
+  border-radius: 999px;
+  padding: 4px 9px;
+  font-size: 11px;
+  font-weight: 700;
+  border: 1px solid rgba(255, 255, 255, 0.9);
+  background: rgba(230, 237, 250, 0.92);
+  color: #324867;
+}
+
+.health-status-chip.ok {
+  color: var(--chip-ok);
+  background: var(--chip-ok-bg);
+  border-color: rgba(173, 236, 209, 0.8);
+}
+
+.health-status-chip.bad {
+  color: var(--chip-bad);
+  background: var(--chip-bad-bg);
+  border-color: rgba(255, 176, 192, 0.7);
+}
+
+.health-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.health-box {
+  min-width: 0;
+  border: 1px solid rgba(255, 255, 255, 0.84);
+  border-radius: var(--radius-sm);
+  background: rgba(255, 255, 255, 0.78);
+  padding: 10px;
+}
+
+.health-box-wide {
+  grid-column: 1 / -1;
+}
+
+.health-detail {
+  color: #26344d;
+  font-size: 13px;
+  font-weight: 650;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+}
+
+.health-meta {
+  margin-top: 5px;
+  color: var(--text-soft);
+  font-size: 12px;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+}
+
+.health-error {
+  margin-bottom: 10px;
+  border: 1px solid rgba(255, 176, 192, 0.7);
+  border-radius: var(--radius-sm);
+  background: var(--chip-bad-bg);
+  color: var(--chip-bad);
+  padding: 8px 10px;
+  font-size: 12px;
+  line-height: 1.45;
+}
+
 .compact-section {
   margin-top: 10px;
   border: 1px solid rgba(255, 255, 255, 0.84);
@@ -1225,6 +1317,10 @@ textarea:focus {
   }
 
   .insights-primary-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .health-grid {
     grid-template-columns: 1fr;
   }
 

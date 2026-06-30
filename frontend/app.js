@@ -46,6 +46,19 @@ const el = {
   overviewLatestEntry: document.getElementById("overview-latest-entry"),
   overviewAnalysisJobs: document.getElementById("overview-analysis-jobs"),
   focusLines: document.getElementById("focus-lines"),
+  healthStatusChip: document.getElementById("health-status-chip"),
+  healthUpdated: document.getElementById("health-updated"),
+  healthError: document.getElementById("health-error"),
+  healthDbPath: document.getElementById("health-db-path"),
+  healthDbCounts: document.getElementById("health-db-counts"),
+  healthJobs: document.getElementById("health-jobs"),
+  healthJobsDetail: document.getElementById("health-jobs-detail"),
+  healthFts: document.getElementById("health-fts"),
+  healthFtsDetail: document.getElementById("health-fts-detail"),
+  healthRollup: document.getElementById("health-rollup"),
+  healthRollupDetail: document.getElementById("health-rollup-detail"),
+  healthContextPack: document.getElementById("health-context-pack"),
+  healthContextPackDetail: document.getElementById("health-context-pack-detail"),
 };
 
 const state = {
@@ -1035,7 +1048,125 @@ async function openDiary(date, locator = null) {
   }
 }
 
+function healthText(value, fallback = "-") {
+  if (value === null || value === undefined || value === "") return fallback;
+  return String(value);
+}
+
+function healthCount(value) {
+  const n = Number(value);
+  return Number.isFinite(n) ? String(n) : "0";
+}
+
+function healthFlag(value) {
+  return value ? "可用" : "不可用";
+}
+
+function updateHealthChip(kind, text) {
+  if (!el.healthStatusChip) return;
+  el.healthStatusChip.classList.remove("ok", "bad", "idle");
+  el.healthStatusChip.classList.add(kind);
+  el.healthStatusChip.textContent = text;
+}
+
+function setHealthPanelLoading() {
+  updateHealthChip("idle", "检查中");
+  if (el.healthUpdated) {
+    el.healthUpdated.textContent = "诊断加载中...";
+  }
+  if (el.healthError) {
+    el.healthError.classList.add("hidden");
+    el.healthError.textContent = "";
+  }
+}
+
+function setHealthPanelError(err) {
+  updateHealthChip("bad", "不可用");
+  if (el.healthUpdated) {
+    el.healthUpdated.textContent = "诊断不可用";
+  }
+  if (el.healthError) {
+    el.healthError.classList.remove("hidden");
+    el.healthError.textContent = `Health 请求失败: ${err?.message || "unknown"}`;
+  }
+}
+
+function renderHealthPanel(data = {}) {
+  const db = data.db || {};
+  const jobs = data.jobs || {};
+  const fts = data.fts || {};
+  const rollup = data.latest_rollup || {};
+  const contextPack = data.context_pack || {};
+  const checkedAt = new Date().toLocaleTimeString("zh-CN", {
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    hour12: false,
+  });
+
+  updateHealthChip(data.ok ? "ok" : "bad", data.ok ? "正常" : "异常");
+  if (el.healthUpdated) {
+    el.healthUpdated.textContent = `最近检查 ${checkedAt}`;
+  }
+  if (el.healthError) {
+    el.healthError.classList.add("hidden");
+    el.healthError.textContent = "";
+  }
+  if (el.healthDbPath) {
+    el.healthDbPath.textContent = healthText(data.db_path || db.path);
+  }
+  if (el.healthDbCounts) {
+    el.healthDbCounts.textContent = `entries ${healthCount(data.entries_count)} · blocks ${healthCount(data.blocks_count)} · ${db.exists ? "db exists" : "db missing"}`;
+  }
+  if (el.healthJobs) {
+    el.healthJobs.textContent = `total ${healthCount(jobs.total)} · done ${healthCount(jobs.done)}`;
+  }
+  if (el.healthJobsDetail) {
+    el.healthJobsDetail.textContent = `pending ${healthCount(jobs.pending)} · running ${healthCount(jobs.running)} · failed ${healthCount(jobs.failed)} · skipped ${healthCount(jobs.skipped)}`;
+  }
+  if (el.healthFts) {
+    el.healthFts.textContent = healthFlag(fts.available);
+  }
+  if (el.healthFtsDetail) {
+    const ftsError = fts.error ? ` · ${fts.error}` : "";
+    el.healthFtsDetail.textContent = `table ${healthFlag(fts.table_exists)}${ftsError}`;
+  }
+  if (el.healthRollup) {
+    el.healthRollup.textContent = rollup.available
+      ? `entry #${healthText(rollup.entry_id)}`
+      : "暂无 rollup";
+  }
+  if (el.healthRollupDetail) {
+    el.healthRollupDetail.textContent = rollup.available
+      ? [
+        healthText(rollup.created_at, "时间未知"),
+        healthText(rollup.model, "model -"),
+        healthText(rollup.prompt_version, "prompt -"),
+        healthText(rollup.summary_1_3, "暂无摘要"),
+      ].join(" · ")
+      : "entry_analysis 尚无记录";
+  }
+  if (el.healthContextPack) {
+    el.healthContextPack.textContent = healthFlag(contextPack.available);
+  }
+  if (el.healthContextPackDetail) {
+    const contextError = contextPack.error ? ` · ${contextPack.error}` : "";
+    el.healthContextPackDetail.textContent = `${healthText(contextPack.module)} · schema ${healthText(contextPack.schema)}${contextError}`;
+  }
+}
+
+async function refreshHealthPanel() {
+  setHealthPanelLoading();
+  try {
+    const data = await fetchJson("/api/health");
+    renderHealthPanel(data);
+  } catch (err) {
+    setHealthPanelError(err);
+  }
+}
+
 async function refreshInsights() {
+  const healthRefresh = refreshHealthPanel();
   try {
     const data = await fetchJson("/api/dashboard/overview?limit=120");
     const focus = Array.isArray(data.focus_lines) ? data.focus_lines : [];
@@ -1064,6 +1195,7 @@ async function refreshInsights() {
   } catch (err) {
     setStatus(`概览刷新失败: ${err.message}`);
   }
+  await healthRefresh;
 }
 
 function showSavedDiary(text, data) {
@@ -1426,6 +1558,7 @@ function ensureDomReady() {
   const required = [
     "systemPill", "chatSessionList", "newChatBtn", "chatSessionTitle", "chatMessages", "chatStatus", "unifiedInput", "voiceChatBtn", "sendBtn", "diaryInput", "diaryRecordBtn", "saveDiaryBtn", "diaryStatus", "historyList", "readerContent", "readerDate", "readerAudio", "readerState", "readerActions", "readerEditBtn", "readerReanalyzeBtn", "readerDeleteBtn", "readerCancelBtn", "readerSaveBtn", "readerEditor",
     "overviewEntriesCount", "overviewLatestEntry", "overviewAnalysisJobs", "focusLines",
+    "healthStatusChip", "healthUpdated", "healthError", "healthDbPath", "healthDbCounts", "healthJobs", "healthJobsDetail", "healthFts", "healthFtsDetail", "healthRollup", "healthRollupDetail", "healthContextPack", "healthContextPackDetail",
     "toggleComposeBtn", "toggleHistoryBtn", "notebookComposeWrap", "notebookLayout", "historyPane"
   ];
 
