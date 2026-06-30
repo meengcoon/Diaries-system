@@ -2121,7 +2121,7 @@ Stop conditions:
 
 ## HEALTH-002 - Core Health / Diagnostics Frontend Panel
 
-Status: READY
+Status: DONE
 
 Task capsule:
 
@@ -2151,6 +2151,9 @@ Scope summary:
 - Consume the existing `GET /api/health` endpoint from `HEALTH-001`.
 - Keep details, validation, and stop conditions in the task capsule.
 
+Result: implemented by `67e3bba feat: make core diagnostics visible before
+feature expansion`; status reconciled by `HEALTH-002-CLOSEOUT`.
+
 ## HEALTH-002-CLOSEOUT-CONTRACT-FIX - Correct health closeout scope
 
 Status: DONE
@@ -2178,7 +2181,7 @@ Stop: register only if missing; stop after fixing the contract in the next run.
 
 ## HEALTH-002-CLOSEOUT - Reconcile completed health panel task status
 
-Status: READY
+Status: DONE
 
 Goal: close the stale `HEALTH-002` task status after the frontend diagnostics
 panel was implemented in `67e3bba` and recorded in `docs/PROJECT_STATE.md`.
@@ -2196,6 +2199,9 @@ Allowed files: `docs/TASKS.md`, `docs/tasks/HEALTH-002.md`,
 Acceptance: mark `HEALTH-002` as `DONE` using committed evidence only, preserve
 its capsule link, record `67e3bba` as the implementation evidence, and avoid
 source/test/frontend/runtime changes.
+
+Result: `HEALTH-002` is marked `DONE` in both the task index and legacy capsule
+using committed evidence from `67e3bba`.
 
 Validation: `git diff --check`; focused `rg` for `HEALTH-002`,
 `HEALTH-002-CLOSEOUT`, `67e3bba`, and `Status: DONE`; `git diff --cached

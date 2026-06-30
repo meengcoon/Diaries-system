@@ -3,8 +3,14 @@
 ## Task
 
 - ID: `HEALTH-002`
-- Status: READY
+- Status: DONE
 - Type: frontend-only UI/API integration
+
+## Closeout Evidence
+
+- Implemented by `67e3bba feat: make core diagnostics visible before feature
+  expansion`.
+- Status reconciled by `HEALTH-002-CLOSEOUT` using committed evidence only.
 
 ## Dependency Notes
 
