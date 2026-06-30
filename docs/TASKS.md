@@ -2150,6 +2150,36 @@ Scope summary:
 - Consume the existing `GET /api/health` endpoint from `HEALTH-001`.
 - Keep details, validation, and stop conditions in the task capsule.
 
+## FILE-MGMT-001 - Define task directory file management model
+
+Status: READY
+
+Goal: define a task-directory governance model so `docs/TASKS.md` becomes an
+index and task details live in numbered files under `docs/tasks/<TASK_ID>/`.
+
+Task directory: `docs/tasks/FILE-MGMT-001/`
+
+Key docs to create during execution:
+
+- `docs/tasks/FILE-MGMT-001/001-contract.md`
+- `docs/tasks/FILE-MGMT-001/002-task-directory-model.md`
+- `docs/tasks/FILE-MGMT-001/003-migration-checklist.md`
+- `docs/tasks/FILE-MGMT-001/004-validation.md`
+
+Allowed files: `AGENTS.md`, `docs/TASKS.md`, `docs/WORKFLOW.md`,
+`docs/tasks/FILE-MGMT-001/`
+
+Acceptance: define the index-vs-directory contract, numbered document categories
+for docs/code-feature/optimization/validation/archive content, and split rules:
+500 lines is the soft split trigger; 1000 lines is the hard limit for one task
+document. Do not migrate historical tasks in this task.
+
+Validation: `git diff --check`; `git diff --cached --name-only`;
+`git diff --cached --check`; focused `rg` for the new model terms.
+
+Stop: register only if missing; stop if execution needs source/runtime changes
+or historical task migration before the model exists.
+
 ## QC-001 - Quick Capture Backend Contract
 
 Status: PARKED
